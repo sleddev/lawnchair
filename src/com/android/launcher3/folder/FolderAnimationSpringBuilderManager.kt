@@ -81,6 +81,7 @@ class FolderAnimationSpringBuilderManager(
             val launcher = launcherDelegate.launcher ?: return
             val scrim = launcher.scrimView
             launcherDelegate.launcher?.depthController?.folderZoom?.value = 0f
+            launcherDelegate.launcher?.depthController?.folderDepth?.value = 0f
             if (!launcher.isInState(LauncherState.ALL_APPS)) {
                 scrim.alpha = 1f
                 scrim.setBackgroundColor(Color.TRANSPARENT)

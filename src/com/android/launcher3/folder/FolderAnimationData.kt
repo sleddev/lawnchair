@@ -97,7 +97,8 @@ data class FolderAnimationData(
                 ((folderIconWorkspacePosition.top +
                     paddingTop +
                     Math.round(previewBackground.offsetY * scaleRelativeToDragLayer)) -
-                    contentOffsetY)
+                    contentOffsetY -
+                    headerHeight)
 
             // Get scaled height of content and radius of background
             val scaledContentHeight = contentAreaHeight.toFloat() * initialFolderScale

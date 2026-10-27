@@ -55,14 +55,16 @@ data class ClipRevealData(
 
             with(folderAnimationData) {
                 // Setup start and end area for revealing Folder background
+                // Lawnchair: the folder panel starts below the folder name header.
                 val backgroundStartRect =
                     Rect(
                         previewOffsetX,
-                        contentOffsetY,
+                        headerHeight + contentOffsetY,
                         Math.round((previewOffsetX + initialFolderSize)),
-                        Math.round((contentOffsetY + initialFolderSize)),
+                        Math.round((headerHeight + contentOffsetY + initialFolderSize)),
                     )
-                val backgroundEndRect = Rect(0, 0, layoutParams.width, layoutParams.height)
+                val backgroundEndRect =
+                    Rect(0, headerHeight, layoutParams.width, layoutParams.height)
                 val finalBackgroundRadius = folderBackground.cornerRadius
 
                 // Get page for revealing Folder Content
@@ -77,17 +79,24 @@ data class ClipRevealData(
                     ((deviceProfile.folderIconSizePx / initialFolderScale) *
                         CONTENT_REVEAL_PADDING_PERCENTAGE)
                         .toInt()
+                // Content rects are relative to the content, which sits below the header.
                 val contentStart =
                     Rect(
                         (pageStart + (backgroundStartRect.left / initialFolderScale)).toInt() -
                             extraRadius,
-                        (backgroundStartRect.top / initialFolderScale).toInt() - extraRadius,
+                        (contentOffsetY / initialFolderScale).toInt() - extraRadius,
                         (pageStart + (backgroundStartRect.right / initialFolderScale)).toInt() +
                             extraRadius,
-                        (backgroundStartRect.bottom / initialFolderScale).toInt() + extraRadius,
+                        ((contentOffsetY + initialFolderSize) / initialFolderScale).toInt() +
+                            extraRadius,
                     )
                 val contentEnd =
-                    Rect(pageStart, 0, pageStart + layoutParams.width, layoutParams.height)
+                    Rect(
+                        pageStart,
+                        0,
+                        pageStart + layoutParams.width,
+                        layoutParams.height - headerHeight,
+                    )
                 return ClipRevealData(
                     isOpening = folderAnimationData.isOpening,
                     shapeDelegate = shapeDelegate,

@@ -40,4 +40,15 @@ interface BaseDepthController {
      * Property for folder expansion wallpaper zoom.
      */
     val folderZoom: MultiPropertyFactory<*>.MultiProperty?
+
+    /**
+     * Lawnchair: property for the open folder depth, which blurs everything behind the folder.
+     */
+    val folderDepth: MultiPropertyFactory<*>.MultiProperty?
+
+    /**
+     * Lawnchair: re-applies the current blur, even if the depth didn't change. Used when
+     * something else (e.g. a state change during a drag) reset the blur behind an open folder.
+     */
+    fun reapplyBlur()
 }

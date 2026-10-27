@@ -393,7 +393,13 @@ public class FolderPagedView extends PagedView<PageIndicatorDots> implements Cli
         if (mFolder.isInAppDrawer()) {
             page.setCellDimensions(grid.getAllAppsProfile().getCellWidthPx(), grid.getAllAppsProfile().getCellHeightPx());
         } else {
-            page.setCellDimensions(grid.folderCellWidthPx, grid.folderCellHeightPx);
+            // Lawnchair: One UI style, the cells stretch so the grid spans the folder panel.
+            int columns = Math.max(grid.numFolderColumns, 1);
+            int cellWidth = (mFolder.getPanelWidth() - getPaddingLeft() - getPaddingRight()
+                    - (columns - 1) * grid.folderCellLayoutBorderSpacePx.x) / columns;
+            page.setCellDimensions(Math.max(cellWidth, grid.folderCellWidthPx),
+                    grid.folderCellHeightPx + getResources().getDimensionPixelSize(
+                            R.dimen.folder_cell_extra_height));
         }
         page.getShortcutsAndWidgets().setMotionEventSplittingEnabled(false);
         page.setInvertIfRtl(true);
@@ -498,9 +504,8 @@ public class FolderPagedView extends PagedView<PageIndicatorDots> implements Cli
             mFolder.onIndicatorVisibilityChanged();
         }
         // Set the gravity as LEFT or RIGHT instead of START, as START depends on the actual text.
-        int horizontalGravity = getPageCount() > 1
-                ? (mIsRtl ? Gravity.RIGHT : Gravity.LEFT) : Gravity.CENTER_HORIZONTAL;
-        mFolder.getFolderName().setGravity(horizontalGravity | Gravity.CENTER_VERTICAL);
+        // Lawnchair: the name is in its own header above the panel, always centered.
+        mFolder.getFolderName().setGravity(Gravity.CENTER);
     }
 
     public int getDesiredWidth() {

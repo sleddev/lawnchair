@@ -210,13 +210,16 @@ fun resolveFolderPreviewColor(context: Context): Int {
 /**
  * Open-folder background fill color.
  * Opacity is applied separately via [getFolderBackgroundAlpha] on the drawable.
+ * By default it's a translucent One UI style "frosted" panel over the blurred background.
  */
 fun resolveFolderBackgroundColor(context: Context): Int {
     val custom = getCustomFolderColor(context)
     return if (custom != 0) {
         custom
+    } else if (Utilities.isDarkTheme(context)) {
+        ColorUtils.setAlphaComponent(android.graphics.Color.BLACK, 0x70)
     } else {
-        ColorTokens.FolderBackgroundColor.resolveColor(context)
+        ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x90)
     }
 }
 

@@ -99,6 +99,12 @@ public class FolderGridOrganizer {
      * maintaining the restrictions of {@link #mMaxCountX} &amp; {@link #mMaxCountY}.
      */
     private void calculateGridSize(int count) {
+        // Lawnchair: One UI style, the folder always uses all the columns and only grows in rows.
+        if (count > 0 && mMaxCountX > 0) {
+            mCountX = mMaxCountX;
+            mCountY = Math.max(1, Math.min(mMaxCountY, (count + mMaxCountX - 1) / mMaxCountX));
+            return;
+        }
         boolean done;
         int gridCountX = mCountX;
         int gridCountY = mCountY;

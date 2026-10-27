@@ -75,7 +75,9 @@ public class BaseDepthControllerImpl implements BaseDepthController {
 
     private static final int DEPTH_INDEX_STATE_TRANSITION = 0;
     private static final int DEPTH_INDEX_WIDGET = 1;
-    private static final int DEPTH_INDEX_COUNT = 2;
+    private static final int DEPTH_INDEX_FOLDER = 2;
+    private static final float FOLDER_WORKSPACE_BLUR_MULTIPLIER = 2.5f;
+    private static final int DEPTH_INDEX_COUNT = 3;
 
     private static final int ZOOM_INDEX_FOLDER = 0;
     private static final int ZOOM_INDEX_COUNT = 1;
@@ -88,6 +90,8 @@ public class BaseDepthControllerImpl implements BaseDepthController {
     public final MultiProperty stateDepth;
     /** Property to set the depth for widget picker. */
     public final MultiProperty widgetDepth;
+    /** Lawnchair: property to set the depth (blur) behind an open folder. */
+    public final MultiProperty folderDepth;
     /** Property to set just the wallpaper zoom for folder expansion. */
     public final MultiProperty folderZoom;
 
@@ -155,6 +159,7 @@ public class BaseDepthControllerImpl implements BaseDepthController {
                 new MultiPropertyFactory<>(this, DEPTH, DEPTH_INDEX_COUNT, Float::max);
         stateDepth = depthProperty.get(DEPTH_INDEX_STATE_TRANSITION);
         widgetDepth = depthProperty.get(DEPTH_INDEX_WIDGET);
+        folderDepth = depthProperty.get(DEPTH_INDEX_FOLDER);
 
         if (Flags.enableExpressiveFolderExpansion()) {
             MultiPropertyFactory<AnimatedFloat> folderZoomFactory =
@@ -177,6 +182,16 @@ public class BaseDepthControllerImpl implements BaseDepthController {
     @Override
     public MultiProperty getWidgetDepth() {
         return widgetDepth;
+    }
+
+    @Override
+    public void reapplyBlur() {
+        applyDepthAndBlur(null, /* applyImmediately */ true, /* skipSimilarBlur */ false);
+    }
+
+    @Override
+    public MultiProperty getFolderDepth() {
+        return folderDepth;
     }
 
     @Override
@@ -380,6 +395,16 @@ public class BaseDepthControllerImpl implements BaseDepthController {
         }
         StateManager<LauncherState, Launcher> stateManager = mLauncher.getStateManager();
         LauncherState settledState = stateManager.getState();
+
+        // Lawnchair: an open folder blurs the workspace behind it, regardless of state. The
+        // icons are blurred more than the wallpaper so they blend into it, like One UI.
+        if (folderDepth.getValue() > 0f && mCurrentBlur > 0) {
+            float folderBlur = mCurrentBlur * FOLDER_WORKSPACE_BLUR_MULTIPLIER;
+            RenderEffect blurEffect = RenderEffect.createBlurEffect(
+                    folderBlur, folderBlur, Shader.TileMode.DECAL);
+            mLauncher.getDepthBlurTargets().forEach(target -> target.setRenderEffect(blurEffect));
+            return true;
+        }
 
         // Stuck-blur bug: AllAppsState.shouldBlurWorkspace(NORMAL) is true during close, and a
         // skipped/interrupted apply can leave RenderEffect on workspace/hotseat icons after home

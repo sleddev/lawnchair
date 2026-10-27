@@ -65,6 +65,8 @@ class FolderSpringAnimatorSet(val animatorSet: AnimatorSet) {
         private const val STIFFNESS_LAUNCHER_SCRIM = 380f
         private const val DAMPING_LAUNCHER_SCRIM = 0.98f
         private const val WALLPAPER_ZOOM = 0.125f
+        // Lawnchair: depth behind an open folder; 0.3 is enough for the max blur radius.
+        private const val FOLDER_DEPTH = 0.3f
 
         /**
          * Factory method to take data calculated from [FolderAnimationSpringBuilderManager], and
@@ -90,6 +92,9 @@ class FolderSpringAnimatorSet(val animatorSet: AnimatorSet) {
             )
             launcherDelegate.launcher?.depthController?.folderZoom?.let {
                 addWallpaperZoomAnimator(folder.context, animatorSet, folderAnimData.isOpening, it)
+            }
+            launcherDelegate.launcher?.depthController?.folderDepth?.let {
+                addFolderDepthAnimator(folder.context, animatorSet, folderAnimData.isOpening, it)
             }
             iconAnimData.forEach { addContentIconAnimators(folder.context, animatorSet, it) }
             return FolderSpringAnimatorSet(animatorSet)
@@ -258,6 +263,27 @@ class FolderSpringAnimatorSet(val animatorSet: AnimatorSet) {
             )
         }
 
+        private fun addFolderDepthAnimator(
+            context: Context,
+            animatorSet: AnimatorSet,
+            isOpening: Boolean,
+            property: MultiPropertyFactory<*>.MultiProperty,
+        ) {
+            playSpringAnimation(
+                context = context,
+                animatorSet = animatorSet,
+                isOpening = isOpening,
+                startDelay = 0,
+                stiffness = STIFFNESS_LAUNCHER_SCRIM,
+                damping = DAMPING_LAUNCHER_SCRIM,
+                startValue = 0f,
+                endValue = FOLDER_DEPTH,
+                minVisibleChange = MIN_VISIBLE_CHANGE_SCALE,
+                property = MULTI_PROPERTY_VALUE,
+                view = property,
+            )
+        }
+
         private fun addAlphaAndColorAnimators(
             folder: Folder,
             animatorSet: AnimatorSet,
@@ -374,7 +400,7 @@ class FolderSpringAnimatorSet(val animatorSet: AnimatorSet) {
             val hotseat = launcher.hotseat
             val workspaceScale = WORKSPACE_SCALE_PROPERTY_FACTORY.get(SCALE_INDEX_FOLDER_ANIM)
             val hotseatScale = HOTSEAT_SCALE_PROPERTY_FACTORY.get(SCALE_INDEX_FOLDER_ANIM)
-            val finalScrimAlpha = if (isDarkTheme(context)) 0.32f else 0.2f
+            val finalScrimAlpha = getFinalScrimAlpha(context)
             scrimView.setBackgroundColor(Color.BLACK)
             playSpringAnimation(
                 context = context,
@@ -416,6 +442,23 @@ class FolderSpringAnimatorSet(val animatorSet: AnimatorSet) {
                 view = hotseat,
             )
             animatorSet.addListener(FolderScrimAnimationListener(scrimView, isOpening, launcher))
+        }
+
+        private fun getFinalScrimAlpha(context: Context) =
+            if (isDarkTheme(context)) 0.2f else 0.1f
+
+        /**
+         * Lawnchair: restores the dim and blur behind an open folder, after a launcher state
+         * change (e.g. the spring loaded state of a drag started in the folder) reset them.
+         */
+        @JvmStatic
+        fun reapplyOpenFolderBackground(launcher: com.android.launcher3.Launcher) {
+            if (launcher.isInState(LauncherState.ALL_APPS)) {
+                return
+            }
+            launcher.scrimView.setBackgroundColor(Color.BLACK)
+            launcher.scrimView.alpha = getFinalScrimAlpha(launcher)
+            launcher.depthController?.reapplyBlur()
         }
 
         /**

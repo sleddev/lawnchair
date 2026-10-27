@@ -90,6 +90,8 @@ import com.android.launcher3.DropTarget;
 import com.android.launcher3.ExtendedEditText;
 import com.android.launcher3.Flags;
 import com.android.launcher3.Launcher;
+import com.android.launcher3.LauncherState;
+import com.android.launcher3.statemanager.StateManager;
 import com.android.launcher3.OnAlarmListener;
 import com.android.launcher3.R;
 import com.android.launcher3.ShortcutAndWidgetContainer;
@@ -239,6 +241,15 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
 
     protected LinearLayout mFooter;
     private int mFooterHeight;
+    // Lawnchair: height of the folder name header, drawn above the folder panel.
+    // Lawnchair: height of the area above the panel that holds the folder name. It spans from
+    // the top inset to the panel (within min/max bounds), see updateHeaderHeight().
+    private int mHeaderHeight;
+    private int mMinHeaderHeight;
+    private int mMaxHeaderHeight;
+    private int mPanelMarginHorizontal;
+    private int mPanelMarginBottom;
+    private boolean mSkipHeaderDraw;
 
     // Cell ranks used for drag and drop
     @Thunk
@@ -342,6 +353,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         mBackground.setColor(LawnchairUtilsKt.resolveFolderBackgroundColor(getContext()));
         var alpha = LawnchairUtilsKt.getFolderBackgroundAlpha(getContext());
         mBackground.setAlpha(alpha);
+        mBackground.setCornerRadius(
+                getResources().getDimension(R.dimen.folder_panel_corner_radius));
 
         mContent = findViewById(R.id.folder_content);
         mContent.setPadding(paddingLeftRight, dp.folderContentPaddingTop, paddingLeftRight, 0);
@@ -354,7 +367,15 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         if (Flags.enableLauncherVisualRefresh()) {
             mFolderName.setTypeface(Typeface.create("google-sans-flex", Typeface.NORMAL));
         }
-        mFolderName.setTextSize(TypedValue.COMPLEX_UNIT_PX, dp.folderLabelTextSizePx);
+        mMinHeaderHeight = getResources().getDimensionPixelSize(R.dimen.folder_header_min_height);
+        mMaxHeaderHeight = getResources().getDimensionPixelSize(R.dimen.folder_header_max_height);
+        mHeaderHeight = mMinHeaderHeight;
+        mPanelMarginHorizontal = getResources().getDimensionPixelSize(
+                R.dimen.folder_panel_margin_horizontal);
+        mPanelMarginBottom = getResources().getDimensionPixelSize(
+                R.dimen.folder_panel_margin_bottom);
+        mFolderName.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                getResources().getDimensionPixelSize(R.dimen.folder_header_text_size));
         mFolderName.setOnBackKeyListener(this);
         mFolderName.setOnEditorActionListener(this);
         mFolderName.setSelectAllOnFocus(true);
@@ -399,8 +420,6 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
      */
     public void onIndicatorVisibilityChanged() {
         if (mPageIndicator.getVisibility() == View.VISIBLE) {
-            ((MarginLayoutParams) mFolderName.getLayoutParams()).setMarginEnd(
-                    getResources().getDimensionPixelSize(R.dimen.folder_footer_horiz_padding));
             Context ctx = getContext(); // done here to avoid getting context on bg thread
             Executors.UI_HELPER_EXECUTOR.execute(() -> {
                 // Only show arrows if a mouse or touchpad is connected to the device
@@ -424,7 +443,6 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
                 );
             });
         } else {
-            ((MarginLayoutParams) mFolderName.getLayoutParams()).setMarginEnd(0);
             if (mLeftArrow != null) mLeftArrow.setVisibility(View.GONE);
             if (mRightArrow != null) mRightArrow.setVisibility(View.GONE);
         }
@@ -653,13 +671,36 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         requestFocus();
         super.onAttachedToWindow();
         mFolderName.addOnFocusChangeListener(this);
+        Launcher launcher = mLauncherDelegate.getLauncher();
+        if (launcher != null) {
+            launcher.getStateManager().addStateListener(mOpenFolderStateListener);
+        }
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         mFolderName.removeOnFocusChangeListener(this);
+        Launcher launcher = mLauncherDelegate.getLauncher();
+        if (launcher != null) {
+            launcher.getStateManager().removeStateListener(mOpenFolderStateListener);
+        }
     }
+
+    /**
+     * Lawnchair: a drag started in the folder goes through the spring loaded state, whose
+     * transition back to NORMAL resets the dim and blur behind the folder. Restore them.
+     */
+    private final StateManager.StateListener<LauncherState> mOpenFolderStateListener =
+            new StateManager.StateListener<>() {
+                @Override
+                public void onStateTransitionComplete(LauncherState finalState) {
+                    Launcher launcher = mLauncherDelegate.getLauncher();
+                    if (launcher != null && finalState == NORMAL && mState == STATE_OPEN) {
+                        FolderSpringAnimatorSet.reapplyOpenFolderBackground(launcher);
+                    }
+                }
+            };
 
     @Override
     public boolean dispatchPopulateAccessibilityEvent(AccessibilityEvent event) {
@@ -906,13 +947,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         });
 
         // Footer animation
+        mFolderName.setTranslationX(0);
         if (mContent.getPageCount() > 1 && !mInfo.hasOption(FolderInfo.FLAG_MULTI_PAGE_ANIMATION)) {
-            int footerWidth = mContent.getDesiredWidth()
-                    - mFooter.getPaddingLeft() - mFooter.getPaddingRight();
-
-            float textWidth = mFolderName.getPaint().measureText(mFolderName.getText().toString());
-            float translation = (footerWidth - textWidth) / 2;
-            mFolderName.setTranslationX(mContent.mIsRtl ? -translation : translation);
             mPageIndicator.prepareEntryAnimation();
 
             // Do not update the flag if we are in drag mode. The flag will be updated, when we
@@ -923,10 +959,6 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
                 @SuppressLint("InlinedApi")
                 @Override
                 public void onAnimationEnd(Animator animation) {
-                    mFolderName.animate().setDuration(FOLDER_NAME_ANIMATION_DURATION)
-                            .translationX(0)
-                            .setInterpolator(AnimationUtils.loadInterpolator(
-                                    getContext(), android.R.interpolator.fast_out_slow_in));
                     mPageIndicator.playEntryAnimation();
 
                     if (updateAnimationFlag) {
@@ -935,8 +967,6 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
                     }
                 }
             });
-        } else {
-            mFolderName.setTranslationX(0);
         }
 
         mPageIndicator.stopAllAnimations();
@@ -1175,7 +1205,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     private int getTargetRank(DragObject d, float[] recycle) {
         recycle = d.getVisualCenter(recycle);
         return mContent.findNearestArea(
-                (int) recycle[0] - getPaddingLeft(), (int) recycle[1] - getPaddingTop());
+                (int) recycle[0] - getPaddingLeft(),
+                (int) recycle[1] - getPaddingTop() - mHeaderHeight);
     }
 
     @Override
@@ -1389,6 +1420,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     private void centerAboutIcon() {
         BaseDragLayer.LayoutParams lp = (BaseDragLayer.LayoutParams) getLayoutParams();
         BaseDragLayer parent = mActivityContext.getDragLayer();
+        updateHeaderHeight(getContentAreaHeight());
         int width = getFolderWidth();
         int height = getFolderHeight();
 
@@ -1398,13 +1430,10 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         int centeredLeft = centerX - width / 2;
         int centeredTop = centerY - height / 2;
 
-        sTempRect.set(mActivityContext.getFolderBoundingBox());
-        int left = Utilities.boundToRange(centeredLeft, sTempRect.left, sTempRect.right - width);
-        int top = Utilities.boundToRange(centeredTop, sTempRect.top, sTempRect.bottom - height);
-        int[] inOutPosition = new int[]{left, top};
-        mActivityContext.updateOpenFolderPosition(inOutPosition, sTempRect, width, height);
-        left = inOutPosition[0];
-        top = inOutPosition[1];
+        // Lawnchair: One UI style, the folder panel sits near the bottom of the screen (with the
+        // name header above it) instead of being centered about the folder icon.
+        int left = (parent.getWidth() - width) / 2;
+        int top = getPanelBottom() - height;
 
         int folderPivotX = width / 2 + (centeredLeft - left);
         int folderPivotY = height / 2 + (centeredTop - top);
@@ -1416,7 +1445,49 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         lp.x = left;
         lp.y = top;
 
-        mBackground.setBounds(0, 0, width, height);
+        mBackground.setBounds(0, mHeaderHeight, width, height);
+    }
+
+    /** Lawnchair: height of the folder name header above the folder panel. */
+    public int getHeaderHeight() {
+        return mHeaderHeight;
+    }
+
+    /** Lawnchair: bottom of the folder panel, relative to the drag layer. */
+    private int getPanelBottom() {
+        DeviceProfile grid = mActivityContext.getDeviceProfile();
+        int parentHeight = mActivityContext.getDragLayer().getHeight();
+        if (parentHeight == 0) {
+            parentHeight = grid.getDeviceProperties().getHeightPx();
+        }
+        return parentHeight - grid.getInsets().bottom - mPanelMarginBottom;
+    }
+
+    /**
+     * Lawnchair: the header spans from the top inset to the panel, so the name is centered in
+     * the space above the panel, but no further from it than the max header height.
+     */
+    private void updateHeaderHeight(int contentAreaHeight) {
+        int panelHeight = getFolderHeight(contentAreaHeight) - mHeaderHeight;
+        int available = getPanelBottom() - panelHeight
+                - mActivityContext.getDeviceProfile().getInsets().top;
+        mHeaderHeight = Utilities.boundToRange(available, mMinHeaderHeight, mMaxHeaderHeight);
+    }
+
+    /** Lawnchair: whether the event is in the header, but not on the folder name itself. */
+    private boolean isEventOverHeaderGap(BaseDragLayer dl, MotionEvent ev) {
+        dl.getDescendantRectRelativeToSelf(this, sTempRect);
+        sTempRect.bottom = sTempRect.top + mHeaderHeight;
+        return sTempRect.contains((int) ev.getX(), (int) ev.getY())
+                && !dl.isEventOverView(mFolderName, ev);
+    }
+
+    /**
+     * Lawnchair: width of the folder panel, which spans the screen width minus margins.
+     */
+    int getPanelWidth() {
+        DeviceProfile grid = mActivityContext.getDeviceProfile();
+        return grid.getDeviceProperties().getAvailableWidthPx() - 2 * mPanelMarginHorizontal;
     }
 
     protected int getContentAreaHeight() {
@@ -1429,7 +1500,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     int getMaxContentAreaHeight() {
         DeviceProfile grid = mActivityContext.getDeviceProfile();
         return grid.getDeviceProperties().getAvailableHeightPx() - grid.getTotalWorkspacePadding().y
-                - getFooterHeight();
+                - getFooterHeight() - mMinHeaderHeight;
     }
 
     @VisibleForTesting
@@ -1449,11 +1520,16 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
 
     @VisibleForTesting
     int getFolderHeight(int contentAreaHeight) {
-        return getPaddingTop() + getPaddingBottom() + contentAreaHeight + getFooterHeight();
+        return getPaddingTop() + getPaddingBottom() + mHeaderHeight + contentAreaHeight
+                + getFooterHeight();
     }
 
     @VisibleForTesting
     int getFooterHeight() {
+        // Lawnchair: without page dots, only pad the bottom of the panel like the top.
+        if (mContent != null && mContent.getPageCount() <= 1) {
+            return Math.min(mFooterHeight, mContent.getPaddingTop());
+        }
         return mFooterHeight;
     }
 
@@ -1468,32 +1544,22 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         mContent.measure(contentAreaWidthSpec, contentAreaHeightSpec);
 
         mFooter.measure(contentAreaWidthSpec,
-                MeasureSpec.makeMeasureSpec(mFooterHeight, MeasureSpec.EXACTLY));
+                MeasureSpec.makeMeasureSpec(getFooterHeight(), MeasureSpec.EXACTLY));
+        // Lawnchair: the name is centered in the header via its margins.
+        updateHeaderHeight(contentHeight);
+        mFolderName.measure(
+                MeasureSpec.makeMeasureSpec(contentWidth, MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(mHeaderHeight, MeasureSpec.AT_MOST));
+        LinearLayout.LayoutParams nameLp =
+                (LinearLayout.LayoutParams) mFolderName.getLayoutParams();
+        nameLp.topMargin = (mHeaderHeight - mFolderName.getMeasuredHeight()) / 2;
+        nameLp.bottomMargin = mHeaderHeight - mFolderName.getMeasuredHeight() - nameLp.topMargin;
 
         int folderWidth = getPaddingLeft() + getPaddingRight() + contentWidth;
         int folderHeight = getFolderHeight(contentHeight);
         setMeasuredDimension(folderWidth, folderHeight);
     }
 
-    /**
-     * If the Folder Title has less than 100dp of available width, we hide it. The reason we do this
-     * calculation in onSizeChange is because this callback is called 1x when the folder is opened.
-     * <p>
-     * The PageIndicator and the Folder Title share the same horizontal linear layout, but both
-     * are dynamically sized. Therefore, we are setting visibility of the folder title AFTER the
-     * layout is measured.
-     */
-    @Override
-    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        super.onSizeChanged(w, h, oldw, oldh);
-        int minTitleWidth = getResources().getDimensionPixelSize(R.dimen.folder_title_min_width);
-        if (enableLauncherVisualRefresh() && mFolderName.getMeasuredWidth() < minTitleWidth) {
-            ((MarginLayoutParams) mFolderName.getLayoutParams()).setMarginEnd(0);
-            // The post is necessary for margins to be recalculated. RTL UI is shifted otherwise.
-            mFolderName.post(() -> mFolderName.setVisibility(View.GONE));
-            mFooter.setGravity(Gravity.END);
-        }
-    }
 
     /**
      * Rearranges the children based on their rank.
@@ -1833,6 +1899,9 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     @Override
     public void getHitRectRelativeToDragLayer(Rect outRect) {
         getHitRect(outRect);
+        // Lawnchair: only the panel is a drop target, not the (tall) name header above it, so
+        // dragging above the panel leaves the folder and can reach the drop target bar.
+        outRect.top += Math.round(mHeaderHeight * getScaleY());
         outRect.left -= mScrollAreaOffset;
         outRect.right += mScrollAreaOffset;
     }
@@ -1950,7 +2019,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
                     return true;
                 }
                 return false;
-            } else if (!dl.isEventOverView(this, ev)) {
+            } else if (!dl.isEventOverView(this, ev) || isEventOverHeaderGap(dl, ev)) {
                 // Defer folder close to ACTION_UP so multi-finger gestures
                 // (e.g. 3-finger screenshot, palm swipe) don't dismiss the
                 // folder before they're recognized by the system. See issue
@@ -1988,8 +2057,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
                     if (mPendingOutsideKeyboardDismiss
                             && !dl.isEventOverView(mFolderName, ev)) {
                         mFolderName.dispatchBackKey();
-                    } else if (mPendingOutsideClose
-                            && !dl.isEventOverView(this, ev)) {
+                    } else if (mPendingOutsideClose && (!dl.isEventOverView(this, ev)
+                            || isEventOverHeaderGap(dl, ev))) {
                         mLauncherDelegate.interceptOutsideTouch(ev, dl, this);
                     }
                 }
@@ -2028,6 +2097,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
             int count = canvas.save();
             canvas.clipPath(mClipPath.getPath());
             mBackground.draw(canvas);
+            mSkipHeaderDraw = true;
             if (!mIsAnimatingClosed) {
                 // If animating open, clip the content to the clip path to keep in bounds.
                 super.dispatchDraw(canvas);
@@ -2037,10 +2107,21 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
                 // If animating closed, avoid clipping content as preview items protrude past clip.
                 super.dispatchDraw(canvas);
             }
+            mSkipHeaderDraw = false;
+            // Lawnchair: the name header is outside the panel, never clip it.
+            drawChild(canvas, mFolderName, getDrawingTime());
         } else {
             mBackground.draw(canvas);
             super.dispatchDraw(canvas);
         }
+    }
+
+    @Override
+    protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
+        if (mSkipHeaderDraw && child == mFolderName) {
+            return false;
+        }
+        return super.drawChild(canvas, child, drawingTime);
     }
 
     public FolderPagedView getContent() {
