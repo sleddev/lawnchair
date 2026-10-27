@@ -419,6 +419,12 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
             lp.leftMargin = lp.rightMargin = 0;
             lp.gravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
             lp.bottomMargin = grid.hotseatBarSizePx - grid.workspaceCellPaddingXPx;
+            // Lawnchair: keep the page indicator above the glass dock.
+            Hotseat hotseat = mLauncher.getHotseat();
+            int dockMargin = hotseat != null ? hotseat.getPageIndicatorBottomMargin() : -1;
+            if (dockMargin >= 0) {
+                lp.bottomMargin = dockMargin;
+            }
         }
         mPageIndicator.setLayoutParams(lp);
     }

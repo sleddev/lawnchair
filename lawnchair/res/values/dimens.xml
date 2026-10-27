@@ -140,4 +140,14 @@
     <dimen name="folder_panel_margin_bottom">28dp</dimen>
     <dimen name="folder_panel_corner_radius">36dp</dimen>
     <dimen name="folder_cell_extra_height">16dp</dimen>
+
+    <!-- iOS style glass dock -->
+    <dimen name="dock_glass_margin_horizontal">12dp</dimen>
+    <dimen name="dock_glass_padding_vertical">18dp</dimen>
+    <dimen name="dock_glass_corner_radius">36dp</dimen>
+    <!-- Same as the max depth blur behind an open folder (max_depth_blur_radius_enhanced). -->
+    <dimen name="dock_glass_blur_radius">30dp</dimen>
+    <dimen name="dock_glass_border_width">1dp</dimen>
+    <!-- Space between the dock and the (24dp tall, centered) page indicator above it -->
+    <dimen name="dock_glass_page_indicator_gap">12dp</dimen>
 </resources>

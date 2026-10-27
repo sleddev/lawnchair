@@ -27,6 +27,7 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
@@ -65,6 +66,7 @@ import app.lawnchair.hotseat.LawnchairHotseat;
 import app.lawnchair.preferences.PreferenceManager;
 import app.lawnchair.preferences2.PreferenceCacheExtensionsKt;
 import app.lawnchair.preferences2.PreferenceManager2;
+import app.lawnchair.views.GlassDockBackground;
 
 /**
  * View class that represents the bottom dock of the home screen.
@@ -116,6 +118,10 @@ public class Hotseat extends FrameLayout implements Insettable {
     private final int mPageIndicatorHeight;
 
     private final ActivityContext mActivity;
+
+    // Lawnchair: iOS style glass dock behind the icons, unless the dock background pref is used.
+    @Nullable
+    private GlassDockBackground mGlassDock;
 
     PreferenceManager2 preferenceManager2;
     PreferenceManager preferenceManager;
@@ -197,6 +203,9 @@ public class Hotseat extends FrameLayout implements Insettable {
         mQsbAlphaChannels.setUpdateVisibility(true);
 
         setUpBackground();
+        if (hotseatEnabled && !preferenceManager.getHotseatBG().get()) {
+            mGlassDock = new GlassDockBackground(this);
+        }
         setClipChildren(false);
         setClipToPadding(false);
     }
@@ -225,6 +234,82 @@ public class Hotseat extends FrameLayout implements Insettable {
         InsetDrawable bg = new InsetDrawable(background,
                 insetHorizontalLeft, insetVerticalTop, insetHorizontalRight, insetVerticalBottom);
         setBackground(bg);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (mGlassDock != null) {
+            mGlassDock.onAttachedToWindow();
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        if (mGlassDock != null) {
+            mGlassDock.onDetachedFromWindow();
+        }
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        if (mGlassDock != null) {
+            mGlassDock.draw(canvas);
+        }
+        super.dispatchDraw(canvas);
+    }
+
+    /**
+     * Lawnchair: the glass dock wraps the icon rows, inset from the screen edges, and isn't
+     * shown for the vertical (landscape) hotseat.
+     */
+    private void updateGlassDockBounds() {
+        if (mGlassDock == null) {
+            return;
+        }
+        DeviceProfile dp = mActivity.getDeviceProfile();
+        if (mHasVerticalHotseat || dp.isVerticalBarLayout() || mPagedView.getHeight() == 0) {
+            mGlassDock.setBounds(0, 0, 0, 0);
+            return;
+        }
+        float pagerTop = mIconsContainer.getTop() + mPagedView.getTop();
+        float margin = getResources().getDimension(R.dimen.dock_glass_margin_horizontal);
+        mGlassDock.setBounds(margin, getGlassDockTop(pagerTop, mPagedView.getHeight()),
+                getWidth() - margin, getGlassDockBottom(pagerTop, mPagedView.getHeight()));
+    }
+
+    private float getGlassDockTop(float pagerTop, float pagerHeight) {
+        DeviceProfile dp = mActivity.getDeviceProfile();
+        float cellHeight = pagerHeight / Math.max(1, dp.numHotseatRows);
+        return pagerTop + cellHeight / 2 - dp.iconSizePx / 2f
+                - getResources().getDimension(R.dimen.dock_glass_padding_vertical);
+    }
+
+    private float getGlassDockBottom(float pagerTop, float pagerHeight) {
+        DeviceProfile dp = mActivity.getDeviceProfile();
+        float cellHeight = pagerHeight / Math.max(1, dp.numHotseatRows);
+        return pagerTop + pagerHeight - cellHeight / 2 + dp.iconSizePx / 2f
+                + getResources().getDimension(R.dimen.dock_glass_padding_vertical);
+    }
+
+    /**
+     * Lawnchair: bottom margin that places the workspace page indicator just above the glass
+     * dock, or -1 if there's no glass dock. Computed from the device profile, since it's used
+     * before the hotseat is laid out.
+     */
+    public int getPageIndicatorBottomMargin() {
+        DeviceProfile dp = mActivity.getDeviceProfile();
+        if (mGlassDock == null || dp.isVerticalBarLayout()) {
+            return -1;
+        }
+        Rect padding = dp.getHotseatLayoutPadding(getContext());
+        boolean showIndicator = mPagedView.isPagingEnabled();
+        float pagerHeight = dp.hotseatBarSizePx - padding.top - padding.bottom
+                - (showIndicator ? mPageIndicatorHeight : 0);
+        float dockTop = getGlassDockTop(padding.top, pagerHeight);
+        return Math.round(dp.hotseatBarSizePx - dockTop + getResources().getDimension(
+                R.dimen.dock_glass_page_indicator_gap));
     }
 
     /** Provides translation X for hotseat icons for the channel. */
@@ -423,6 +508,18 @@ public class Hotseat extends FrameLayout implements Insettable {
         }
 
         Rect padding = grid.getHotseatLayoutPadding(getContext());
+        if (mGlassDock != null && !grid.isVerticalBarLayout()) {
+            // Lawnchair: space the icons evenly inside the glass dock, with the same gap between
+            // the dock edges and the icons as between the icons themselves.
+            int columns = Math.max(1, grid.numShownHotseatIcons);
+            float dockWidth = grid.getDeviceProperties().getAvailableWidthPx()
+                    - 2 * getResources().getDimension(R.dimen.dock_glass_margin_horizontal);
+            float gap = Math.max(0, (dockWidth - columns * grid.iconSizePx) / (columns + 1));
+            int sidePadding = Math.round(
+                    getResources().getDimension(R.dimen.dock_glass_margin_horizontal) + gap / 2);
+            padding.left = sidePadding + insets.left;
+            padding.right = sidePadding + insets.right;
+        }
         setPadding(padding.left, padding.top, padding.right, padding.bottom);
         setLayoutParams(lp);
         InsettableFrameLayout.dispatchInsets(this, insets);
@@ -588,6 +685,8 @@ public class Hotseat extends FrameLayout implements Insettable {
         int bottom = height - dp.getQsbOffsetY();
         int top = bottom - dp.getHotseatProfile().getQsbHeight();
         mQsb.layout(left, top, right, bottom);
+
+        updateGlassDockBounds();
     }
 
     /**
