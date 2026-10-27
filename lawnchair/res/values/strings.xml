@@ -741,6 +741,7 @@
     <string name="minus_one_unavailable">No feed apps installed</string>
     <string name="minus_one">Feed</string>
     <string name="feed_provider">Feed provider</string>
+    <string name="feed_provider_today">Lawnchair Today</string>
 
     <string name="wallpaper_scrolling_label">Scroll wallpaper</string>
     <string name="wallpaper_depth_effect_label">Wallpaper depth effect</string>

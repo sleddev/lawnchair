@@ -2,7 +2,6 @@ package app.lawnchair.ui.preferences.components
 
 import android.content.Context
 import android.graphics.drawable.Drawable
-import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.Composable
@@ -15,6 +14,7 @@ import app.lawnchair.FeedBridge
 import app.lawnchair.icons.CustomAdaptiveIconDrawable
 import app.lawnchair.preferences.getAdapter
 import app.lawnchair.preferences.preferenceManager
+import app.lawnchair.today.SwitchingOverlayManager
 import app.lawnchair.ui.preferences.components.controls.ListPreference
 import app.lawnchair.ui.preferences.components.controls.ListPreferenceEntry
 import com.android.launcher3.R
@@ -34,7 +34,12 @@ fun getProviders(context: Context) = FeedBridge.getAvailableProviders(context).m
     )
 }
 
-fun getEntries(context: Context) = getProviders(context).map {
+fun getEntries(context: Context) = listOf(
+    ListPreferenceEntry<String>(
+        value = SwitchingOverlayManager.TODAY_PROVIDER,
+        label = { context.getString(R.string.feed_provider_today) },
+    ),
+) + getProviders(context).map {
     ListPreferenceEntry(
         value = it.packageName,
         endWidget = {
@@ -59,9 +64,13 @@ fun FeedPreference(
     val preferredPackage = adapter.state.value
     val entries = remember { getEntries(context) }
     val resolvedPackage = remember(preferredPackage) {
-        FeedBridge.getInstance(context).resolveBridge(preferredPackage)?.packageName ?: "com.google.android.googlequicksearchbox"
+        if (preferredPackage == SwitchingOverlayManager.TODAY_PROVIDER) {
+            preferredPackage
+        } else {
+            FeedBridge.getInstance(context).resolveBridge(preferredPackage)?.packageName
+                ?: "com.google.android.googlequicksearchbox"
+        }
     }
-    Log.d("FEEDDDDD", "FeedPreference: $preferredPackage, $resolvedPackage")
     val resolvedEntry = entries.firstOrNull {
         it.value == resolvedPackage
     }

@@ -2,9 +2,7 @@ package app.lawnchair.nexuslauncher
 
 import android.app.Activity
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.os.Bundle
-import app.lawnchair.FeedBridge
 import app.lawnchair.LawnchairLauncher
 import app.lawnchair.preferences2.PreferenceManager2
 import app.lawnchair.preferences2.firstCached
@@ -146,10 +144,8 @@ class OverlayCallbackImpl(private val mLauncher: LawnchairLauncher) :
     companion object {
         private const val PREF_PERSIST_FLAGS = "pref_persistent_flags"
 
-        fun minusOneAvailable(context: Context): Boolean {
-            return FeedBridge.useBridge(context) ||
-                context.applicationInfo.flags and
-                (ApplicationInfo.FLAG_DEBUGGABLE or ApplicationInfo.FLAG_SYSTEM) != 0
-        }
+        // The built-in Today page is always there, whatever feed apps are installed.
+        @Suppress("UNUSED_PARAMETER")
+        fun minusOneAvailable(context: Context): Boolean = true
     }
 }

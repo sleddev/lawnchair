@@ -40,13 +40,13 @@ import app.lawnchair.finder.FinderTouchController
 import app.lawnchair.gestures.VerticalSwipeTouchController
 import app.lawnchair.gestures.config.GestureHandlerConfig
 import app.lawnchair.gestures.ui.LawnchairShortcutActivity
-import app.lawnchair.nexuslauncher.OverlayCallbackImpl
 import app.lawnchair.preferences.PreferenceManager
 import app.lawnchair.preferences2.PreferenceManager2
 import app.lawnchair.preferences2.firstCached
 import app.lawnchair.root.RootHelperManager
 import app.lawnchair.root.RootNotAvailableException
 import app.lawnchair.theme.ThemeProvider
+import app.lawnchair.today.SwitchingOverlayManager
 import app.lawnchair.ui.popup.LauncherOptionsPopup
 import app.lawnchair.ui.popup.LawnchairShortcut
 import app.lawnchair.util.getThemedIconPacksInstalled
@@ -75,6 +75,7 @@ import com.android.launcher3.uioverrides.states.AllAppsState
 import com.android.launcher3.uioverrides.states.BackgroundAppState
 import com.android.launcher3.uioverrides.states.OverviewState
 import com.android.launcher3.util.ActivityOptionsWrapper
+import com.android.launcher3.util.BackPressHandler
 import com.android.launcher3.util.Executors
 import com.android.launcher3.util.RunnableList
 import com.android.launcher3.util.SystemUiController.UI_STATE_BASE_WINDOW
@@ -97,8 +98,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
 class LawnchairLauncher : QuickstepLauncher() {
-    private val defaultOverlay by unsafeLazy { OverlayCallbackImpl(this) }
     private val prefs by unsafeLazy { PreferenceManager.getInstance(this) }
+    private val defaultOverlay by unsafeLazy {
+        SwitchingOverlayManager(this, useTodayOverlay(), preferenceManager2.enableFeed.firstCached())
+    }
     private val preferenceManager2 by unsafeLazy { PreferenceManager2.getInstance(this) }
     private val insetsController: WindowInsetsControllerCompat by lazy {
         val window = launcher.window
@@ -163,9 +166,12 @@ class LawnchairLauncher : QuickstepLauncher() {
         super.onCreate(savedInstanceState)
 
         prefs.launcherTheme.subscribeChanges(this, ::updateTheme)
-        prefs.feedProvider.subscribeChanges(this, defaultOverlay::reconnect)
+        prefs.feedProvider.subscribeChanges(this) {
+            defaultOverlay.apply(useTodayOverlay(), preferenceManager2.enableFeed.firstCached())
+            defaultOverlay.reconnect()
+        }
         preferenceManager2.enableFeed.get().distinctUntilChanged().onEach { enable ->
-            defaultOverlay.setEnableFeed(enable)
+            defaultOverlay.apply(useTodayOverlay(), enable)
         }.launchIn(scope = lifecycleScope)
         launcher.stateManager.addStateListener(clearSearchStateListener)
 
@@ -506,6 +512,18 @@ class LawnchairLauncher : QuickstepLauncher() {
     }
 
     override fun getDefaultOverlay(): LauncherOverlayManager = defaultOverlay
+
+    private fun useTodayOverlay() = prefs.feedProvider.get() == SwitchingOverlayManager.TODAY_PROVIDER
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (!defaultOverlay.onActivityResult(requestCode, resultCode, data)) {
+            super.onActivityResult(requestCode, resultCode, data)
+        }
+    }
+
+    fun addTodayBackHandler(handler: BackPressHandler) = addBackAnimationCallback(handler)
+
+    fun removeTodayBackHandler(handler: BackPressHandler) = removeBackAnimationCallback(handler)
 
     fun recreateIfNotScheduled() {
         if (sRestartFlags == 0) {
