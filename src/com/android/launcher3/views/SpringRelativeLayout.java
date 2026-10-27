@@ -110,6 +110,11 @@ public class SpringRelativeLayout extends RelativeLayout {
             if (direction == DIRECTION_TOP) {
                 return new EdgeEffectProxy(getContext(), mEdgeGlowTop);
             }
+            // Lawnchair: stretch the whole layout at the bottom too, so floating headers (like
+            // the app drawer's suggestions card) move with the list instead of overlapping it.
+            if (direction == DIRECTION_BOTTOM) {
+                return new EdgeEffectProxy(getContext(), mEdgeGlowBottom);
+            }
             return super.createEdgeEffect(view, direction);
         }
     }
@@ -156,6 +161,19 @@ public class SpringRelativeLayout extends RelativeLayout {
         public void onRelease() {
             mParent.onRelease();
             invalidateParentScrollEffect();
+        }
+
+        // Lawnchair: lets the list scroll back out of a stretch (Android 12+).
+        @Override
+        public float onPullDistance(float deltaDistance, float displacement) {
+            float consumed = mParent.onPullDistance(deltaDistance, displacement);
+            invalidateParentScrollEffect();
+            return consumed;
+        }
+
+        @Override
+        public float getDistance() {
+            return mParent.getDistance();
         }
 
         @Override

@@ -20,6 +20,8 @@ import static android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.os.Build;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
@@ -30,6 +32,7 @@ import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.graphics.ColorUtils;
 
 import app.lawnchair.preferences2.PreferenceManager2;
 import com.android.launcher3.BubbleTextView;
@@ -77,6 +80,8 @@ public class PredictionRowView<T extends Context & ActivityContext>
 
     private boolean mPredictionUiUpdatePaused = false;
 
+    private final Paint mCardPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final int[] mTmpLocation = new int[2];
     private final PreferenceManager2 prefs2 = PreferenceManager2.getInstance(getContext());
 
     public PredictionRowView(@NonNull Context context) {
@@ -141,6 +146,27 @@ public class PredictionRowView<T extends Context & ActivityContext>
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
+        // Lawnchair: the suggested apps sit on a glass card, like the finder's suggestions.
+        if (getChildCount() > 0) {
+            float left = getResources().getDimension(R.dimen.all_apps_prediction_card_inset);
+            float right = getWidth() - left;
+            // Line the card up with the search bar above it.
+            View search = mActivityContext.getAppsView() != null
+                    ? mActivityContext.getAppsView().getSearchView() : null;
+            if (search != null && search.getVisibility() == VISIBLE && search.getWidth() > 0) {
+                search.getLocationInWindow(mTmpLocation);
+                int searchLeft = mTmpLocation[0] + search.getPaddingLeft();
+                int searchRight = mTmpLocation[0] + search.getWidth() - search.getPaddingRight();
+                getLocationInWindow(mTmpLocation);
+                left = searchLeft - mTmpLocation[0];
+                right = searchRight - mTmpLocation[0];
+            }
+            float radius = getResources().getDimension(R.dimen.all_apps_prediction_card_radius);
+            mCardPaint.setColor(Utilities.isDarkTheme(getContext())
+                    ? ColorUtils.setAlphaComponent(Color.WHITE, 0x1C)
+                    : ColorUtils.setAlphaComponent(Color.WHITE, 0x8C));
+            canvas.drawRoundRect(left, 0, right, getHeight(), radius, radius, mCardPaint);
+        }
         mFocusHelper.draw(canvas);
         super.dispatchDraw(canvas);
     }

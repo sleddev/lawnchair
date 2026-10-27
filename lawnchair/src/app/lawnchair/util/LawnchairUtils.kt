@@ -237,6 +237,20 @@ fun resolveFolderBackgroundColor(context: Context): Int {
     }
 }
 
+/** Default app drawer sheet tint over blur: the open folder panel's frosted tint. */
+fun getAllAppsGlassColor(context: Context): Int = if (Utilities.isDarkTheme(context)) {
+    android.graphics.Color.BLACK
+} else {
+    android.graphics.Color.WHITE
+}
+
+/** Faint border around the blurred app drawer sheet. */
+fun getAllAppsGlassBorderColor(context: Context): Int = if (Utilities.isDarkTheme(context)) {
+    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x1F)
+} else {
+    ColorUtils.setAlphaComponent(android.graphics.Color.BLACK, 0x14)
+}
+
 /** Apply Lawnchair custom allapps colour to the provided colour */
 private fun getAllAppsBaseColor(context: Context, defaultColor: Int): Int {
     val prefs2 = PreferenceManager2.getInstance(context)

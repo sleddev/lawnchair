@@ -104,9 +104,8 @@ public class AppsDividerView extends View implements FloatingHeaderRow {
 
     /** {@code true} if all apps label should be shown in place of divider. */
     public void setShowAllAppsLabel(boolean showAllAppsLabel) {
-        if (mAccessibilityManager.isEnabled() && !Utilities.isRunningInTestHarness()) {
-            showAllAppsLabel = true;
-        }
+        // Lawnchair: always a plain divider line, never the "All apps" label.
+        showAllAppsLabel = false;
         if (showAllAppsLabel != mShowAllAppsLabel) {
             mShowAllAppsLabel = showAllAppsLabel;
             updateDividerType();
@@ -146,7 +145,8 @@ public class AppsDividerView extends View implements FloatingHeaderRow {
             if (mShowAllAppsLabel && sectionCount > 0) {
                 dividerType = DividerType.ALL_APPS_LABEL;
             } else if (sectionCount == 1) {
-                dividerType = DividerType.LINE;
+                // Lawnchair: the suggestions card already separates the rows.
+                dividerType = DividerType.NONE;
             } else {
                 dividerType = DividerType.NONE;
             }

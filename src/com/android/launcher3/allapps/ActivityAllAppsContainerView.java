@@ -165,6 +165,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     // Used to animate Search results out and A-Z apps in, or vice-versa.
     private final SearchTransitionController mSearchTransitionController;
     private final Paint mHeaderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Paint mSheetBorderPaint;
     private final Rect mInsets = new Rect();
     private final AllAppsStore<T> mAllAppsStore;
     private final RecyclerView.OnScrollListener mScrollListener =
@@ -992,7 +993,8 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         } else if (!blurEnabled) {
             defaultColor = mBottomSheetBackgroundColorBlurFallback;
         } else {
-            defaultColor = mBottomSheetBackgroundColorOverBlur;
+            // Lawnchair: the same frosted tint as the open folder panel.
+            defaultColor = LawnchairUtilsKt.getAllAppsGlassColor(getContext());
         }
         int newColor = LawnchairUtilsKt.getAllAppsBackgroundColor(mActivityContext, defaultColor);
         if (mCachedBottomSheetBgColor != newColor) {
@@ -1641,6 +1643,21 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         mScrimView = scrimView;
     }
 
+    private void drawSheetBorder(Canvas canvas) {
+        if (mSheetBorderPaint == null) {
+            mSheetBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            mSheetBorderPaint.setStyle(Paint.Style.STROKE);
+            mSheetBorderPaint.setStrokeWidth(getResources().getDisplayMetrics().density);
+        }
+        mSheetBorderPaint.setColor(LawnchairUtilsKt.getAllAppsGlassBorderColor(getContext()));
+        mSheetBorderPaint.setAlpha((int) (Color.alpha(mSheetBorderPaint.getColor()) * getAlpha()));
+        float inset = mSheetBorderPaint.getStrokeWidth() / 2;
+        mTmpRectF.inset(inset, inset);
+        mTmpPath.reset();
+        mTmpPath.addRoundRect(mTmpRectF, mBottomSheetCornerRadii, Direction.CW);
+        canvas.drawPath(mTmpPath, mSheetBorderPaint);
+    }
+
     @Override
     public void drawOnScrimWithScaleAndBottomOffset(
             Canvas canvas, float scale, @Px int bottomOffsetPx) {
@@ -1674,6 +1691,10 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
             mTmpPath.reset();
             mTmpPath.addRoundRect(mTmpRectF, mBottomSheetCornerRadii, Direction.CW);
             canvas.drawPath(mTmpPath, mHeaderPaint);
+            if (isBackgroundBlurEnabled()) {
+                // Lawnchair: a faint glass border, like the folder previews and dock.
+                drawSheetBorder(canvas);
+            }
 
             // When the background panel is blurred (or fallback), we don't add header protection.
             // TODO (b/414671116): Apply header protection whenever search bar is focused.

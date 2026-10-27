@@ -133,6 +133,8 @@ class AllAppsSearchInput(context: Context, attrs: AttributeSet?) :
         hint = ViewCompat.requireViewById(this, R.id.hint)
 
         input = ViewCompat.requireViewById(this, R.id.input)
+        // LC: show what the field is for while it's idle, like the finder's search field.
+        input.setHint(R.string.all_apps_search_bar_hint)
 
         qsbShell = ViewCompat.requireViewById(this, R.id.qsb_shell)
 
@@ -184,14 +186,16 @@ class AllAppsSearchInput(context: Context, attrs: AttributeSet?) :
                     showLens = lensIntent != null,
                 )
 
+                // LC: over blur, a translucent glass pill like the finder's search field.
+                val glassAlpha = if (Utilities.isDarkTheme(context)) 16 else 70
                 val backgroundColor = if (supportBlur) {
-                    ColorTokens.SearchboxHighlightBlur.resolveColor(context)
+                    Color.WHITE
                 } else {
                     ColorTokens.SearchboxHighlight.resolveColor(context)
                 }
 
                 val backgroundAlpha by animateIntAsState(
-                    if (isFocused || !queryEmpty) 0 else 100,
+                    if (isFocused || !queryEmpty) 0 else if (supportBlur) glassAlpha else 100,
                 )
 
                 // Ignore other theme attributes to preserve existing behavior
@@ -288,7 +292,7 @@ class AllAppsSearchInput(context: Context, attrs: AttributeSet?) :
 
                 setBackgroundVisibility(false, 0f)
                 animateHintVisibility(true)
-                animatePadding(initialPaddingLeft / 2, initialPaddingRight / 2)
+                animatePadding(initialPaddingLeft, initialPaddingRight)
             } else {
                 setBackgroundVisibility(true, 1f)
                 animateHintVisibility(false)
@@ -301,7 +305,7 @@ class AllAppsSearchInput(context: Context, attrs: AttributeSet?) :
                     animatePadding(initialPaddingLeft, initialPaddingRight)
                 }
                 focusedResultTitle = ""
-                input.setHint("")
+                input.setHint(R.string.all_apps_search_bar_hint)
                 hint.text = ""
             }
 
@@ -343,14 +347,13 @@ class AllAppsSearchInput(context: Context, attrs: AttributeSet?) :
 
     private fun setupPadding() {
         launcher.deviceProfile.let { dp ->
-            val padding = dp.getAllAppsIconStartMargin(context)
+            // LC: always as wide as an active search, so the bar lines up with the suggestions
+            // card below it.
+            val padding = dp.getAllAppsIconStartMargin(context) / 2
             initialPaddingLeft = padding
             initialPaddingRight = padding
-            // Keep the narrower padding of an active search (see the focus and text listeners)
             paddingAnimator?.cancel()
-            val isSearchActive = ::input.isInitialized && (input.hasFocus() || !input.text.isNullOrEmpty())
-            val currentPadding = if (isSearchActive) padding / 2 else padding
-            setPadding(currentPadding, paddingTop, currentPadding, paddingBottom)
+            setPadding(padding, paddingTop, padding, paddingBottom)
         }
     }
 
