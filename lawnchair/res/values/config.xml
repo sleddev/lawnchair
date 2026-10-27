@@ -65,10 +65,10 @@
     <string name="config_default_qsb_search_provider_id" translatable="false">google</string>
 
     <!-- Which icon shape for application to use by default -->
-    <string name="config_default_icon_shape" translatable="false">system</string>
+    <string name="config_default_icon_shape" translatable="false">squircle</string>
 
     <!-- Which icon shape for folder to use by default -->
-    <string name="config_default_folder_shape" translatable="false">system</string>
+    <string name="config_default_folder_shape" translatable="false">squircle</string>
 
     <!-- Which calendar to use on smartspace by default -->
     <string name="config_default_smart_space_calendar" translatable="false">gregorian</string>
