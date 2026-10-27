@@ -92,6 +92,8 @@ public class PreviewBackground extends DelegatedCellDrawing {
     float mScale = 1f;
     private int mBgColor;
     private int mStrokeColor;
+    // Lawnchair: faint static border around the background.
+    private int mBorderColor;
     private int mDotColor;
     private float mStrokeWidth;
     private int mStrokeAlpha = MAX_BG_OPACITY;
@@ -194,6 +196,7 @@ public class PreviewBackground extends DelegatedCellDrawing {
         mDotColor = dotColorOption.getColorPreferenceEntry().getLightColor().invoke(context);
         mStrokeColor = ColorTokens.FolderIconBorderColor.resolveColor(context);
         mBgColor = LawnchairUtilsKt.resolveFolderPreviewColor(context);
+        mBorderColor = LawnchairUtilsKt.resolveFolderPreviewBorderColor(context);
         ta.recycle();
 
         DeviceProfile grid = activity.getDeviceProfile();
@@ -288,6 +291,16 @@ public class PreviewBackground extends DelegatedCellDrawing {
         mPaint.setColor(getBgColor());
 
         getShape().drawShape(canvas, getOffsetX(), getOffsetY(), getScaledRadius(), mPaint);
+
+        if (Color.alpha(mBorderColor) > 0) {
+            mPaint.setStyle(Paint.Style.STROKE);
+            mPaint.setStrokeWidth(mStrokeWidth);
+            mPaint.setColor(mBorderColor);
+            float inset = mStrokeWidth / 2;
+            getShape().drawShape(canvas, getOffsetX() + inset, getOffsetY() + inset,
+                    getScaledRadius() - inset, mPaint);
+            mPaint.setStyle(Paint.Style.FILL);
+        }
         drawShadow(canvas);
     }
 

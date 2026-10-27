@@ -1369,7 +1369,8 @@ public class Launcher extends StatefulActivity<LauncherState>
         mWorkspace.getPageIndicator().setPaintColor(Themes.getAttrBoolean(
                 this, R.attr.isWorkspaceDarkText) ? Color.BLACK : Color.WHITE);
 
-        mDepthBlurTargets = List.of(mWorkspace, mHotseat);
+        // Lawnchair: the page indicator is always shown, so it's blurred along with the workspace.
+        mDepthBlurTargets = List.of(mWorkspace, mHotseat, (View) mWorkspace.getPageIndicator());
     }
 
     /**

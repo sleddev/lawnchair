@@ -196,15 +196,29 @@ fun getCustomFolderColor(context: Context): Int {
     return prefs2.folderColor.firstCached().colorPreferenceEntry.lightColor(context)
 }
 
-/** Closed-folder preview circle color (includes preview opacity). */
+/**
+ * Closed-folder preview background color (includes preview opacity). By default it's translucent,
+ * One UI style.
+ */
 fun resolveFolderPreviewColor(context: Context): Int {
     val custom = getCustomFolderColor(context)
-    val base = if (custom != 0) {
-        custom
+    return if (custom != 0) {
+        ColorUtils.setAlphaComponent(custom, getFolderPreviewAlpha(context))
     } else {
-        ColorTokens.FolderPreviewColor.resolveColor(context)
+        ColorUtils.setAlphaComponent(
+            ColorTokens.FolderPreviewColor.resolveColor(context),
+            (getFolderPreviewAlpha(context) * DEFAULT_FOLDER_PREVIEW_ALPHA).toInt(),
+        )
     }
-    return ColorUtils.setAlphaComponent(base, getFolderPreviewAlpha(context))
+}
+
+private const val DEFAULT_FOLDER_PREVIEW_ALPHA = 0.7f
+
+/** Faint border around the closed-folder preview background. */
+fun resolveFolderPreviewBorderColor(context: Context): Int = if (Utilities.isDarkTheme(context)) {
+    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x17)
+} else {
+    ColorUtils.setAlphaComponent(android.graphics.Color.BLACK, 0x0D)
 }
 
 /**

@@ -1,17 +1,14 @@
 package com.android.launcher3.folder;
 
 /**
- * Lawnchair: lays out the folder preview as a grid that sits fully inside the folder background
- * (2 columns for up to 4 items, 3 columns beyond that), instead of AOSP's circle-based layout
- * where the items overflow the background.
+ * Lawnchair: lays out the folder preview as a 3x3 grid that sits fully inside the folder
+ * background and fills up in reading order, instead of AOSP's circle-based layout where the items
+ * overflow the background.
  */
 public class ClippedFolderIconLayoutRule {
 
     public static final int PREVIEW_GRID_SIZE = 3;
     public static final int MAX_NUM_ITEMS_IN_PREVIEW = PREVIEW_GRID_SIZE * PREVIEW_GRID_SIZE;
-    // Up to this many items, the preview uses a 2 column grid.
-    private static final int MAX_NUM_ITEMS_IN_SMALL_GRID = 4;
-    private static final int SMALL_GRID_SIZE = 2;
 
     // Padding between the background edge and the grid, as a fraction of the available space.
     // Large enough that the corner items stay clear of the background's rounded corners.
@@ -63,17 +60,17 @@ public class ClippedFolderIconLayoutRule {
             // 0 1 2 * <-- Exit position (row 0, col 3)
             // 3 4 5
             // 6 7 8
-            getGridPosition(0, PREVIEW_GRID_SIZE, PREVIEW_GRID_SIZE, mTmpPoint);
+            getGridPosition(0, PREVIEW_GRID_SIZE, mTmpPoint);
         } else if (index == ENTER_INDEX) {
             // 0 1 2
             // 3 4 5 * <-- Enter position (row 1, col 3)
             // 6 7 8
-            getGridPosition(1, PREVIEW_GRID_SIZE, PREVIEW_GRID_SIZE, mTmpPoint);
+            getGridPosition(1, PREVIEW_GRID_SIZE, mTmpPoint);
         } else if (index >= MAX_NUM_ITEMS_IN_PREVIEW) {
             // Items beyond those displayed in the preview are animated to the center
             mTmpPoint[0] = mTmpPoint[1] = mAvailableSpace / 2 - (mIconSize * totalScale) / 2;
         } else {
-            getPosition(index, curNumItems, mTmpPoint);
+            getPosition(index, mTmpPoint);
         }
 
         transX = mTmpPoint[0];
@@ -102,10 +99,9 @@ public class ClippedFolderIconLayoutRule {
         float transY;
 
         if (numItemsInPage <= MAX_NUM_ITEMS_IN_PREVIEW) {
-            getPosition(index, numItemsInPage, mTmpPoint);
+            getPosition(index, mTmpPoint);
         } else {
-            getGridPosition(index / mNumFolderColumns, index % mNumFolderColumns,
-                    PREVIEW_GRID_SIZE, mTmpPoint);
+            getGridPosition(index / mNumFolderColumns, index % mNumFolderColumns, mTmpPoint);
         }
 
         transX = mTmpPoint[0];
@@ -119,52 +115,34 @@ public class ClippedFolderIconLayoutRule {
         return params;
     }
 
-    private static int getGridSize(int numItems) {
-        return numItems > MAX_NUM_ITEMS_IN_SMALL_GRID ? PREVIEW_GRID_SIZE : SMALL_GRID_SIZE;
-    }
-
-    /** Size of a grid cell for a grid that's {@param gridSize} wide, as a fraction. */
-    private static float getCellSize(int gridSize) {
-        return (1 - 2 * GRID_PADDING) / gridSize;
+    /** Size of a grid cell, as a fraction of the available space. */
+    private static float getCellSize() {
+        return (1 - 2 * GRID_PADDING) / PREVIEW_GRID_SIZE;
     }
 
     /**
-     * Returns the top left of the icon at {@param row}, {@param col} of a grid that's
-     * {@param gridSize} wide. Columns beyond the grid continue at the same spacing.
+     * Returns the top left of the icon at {@param row}, {@param col} of the grid. Columns beyond
+     * the grid continue at the same spacing.
      *
      * Positions in the 3x3 grid: 0 1 2  // 0 is row 0, col 0
      *                            3 4 5
      *                            6 7 8  // 8 is row 2, col 2
      */
-    private void getGridPosition(int row, int col, int gridSize, float[] result) {
-        float cellSize = getCellSize(gridSize) * mAvailableSpace;
+    private void getGridPosition(int row, int col, float[] result) {
+        float cellSize = getCellSize() * mAvailableSpace;
         float iconSize = cellSize * ICON_CELL_FACTOR;
         float first = GRID_PADDING * mAvailableSpace + (cellSize - iconSize) / 2;
 
         if (mIsRtl) {
-            col = gridSize - 1 - col;
+            col = PREVIEW_GRID_SIZE - 1 - col;
         }
         result[0] = first + col * cellSize;
         result[1] = first + row * cellSize;
     }
 
-    private void getPosition(int index, int curNumItems, float[] result) {
-        curNumItems = Math.max(curNumItems, 1);
-        int gridSize = getGridSize(curNumItems);
-        int numRows = (curNumItems + gridSize - 1) / gridSize;
-        int row = index / gridSize;
-        int col = index % gridSize;
-        getGridPosition(row, col, gridSize, result);
-
-        // Items are in reading order. Center the rows vertically, and center a partially filled
-        // last row horizontally (e.g. 3 items form a triangle).
-        float cellSize = getCellSize(gridSize) * mAvailableSpace;
-        result[1] += (gridSize - numRows) * cellSize / 2;
-        if (row == numRows - 1) {
-            int itemsInRow = curNumItems - row * gridSize;
-            float shift = (gridSize - itemsInRow) * cellSize / 2;
-            result[0] += mIsRtl ? -shift : shift;
-        }
+    /** Items fill the grid in reading order, starting at the top left. */
+    private void getPosition(int index, float[] result) {
+        getGridPosition(index / PREVIEW_GRID_SIZE, index % PREVIEW_GRID_SIZE, result);
     }
 
     /**
@@ -174,8 +152,7 @@ public class ClippedFolderIconLayoutRule {
      * @return scale for icons in Folder
      */
     public float scaleForItem(int numItems, int page) {
-        int gridSize = page > 0 ? PREVIEW_GRID_SIZE : getGridSize(numItems);
-        return getCellSize(gridSize) * ICON_CELL_FACTOR * mBaselineIconScale;
+        return getCellSize() * ICON_CELL_FACTOR * mBaselineIconScale;
     }
 
     public float getIconSize() {
