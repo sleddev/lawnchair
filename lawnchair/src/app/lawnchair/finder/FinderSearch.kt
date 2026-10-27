@@ -166,9 +166,17 @@ class FinderSearch(private val launcher: LawnchairLauncher) {
             val calculation = calculate(query)
             var conversion = Conversions.convert(query, CurrencyRates.peek(context))
 
+            // The slow sections keep showing the previous query's entries until theirs arrive,
+            // so they don't blink out on every keystroke.
+            val previous = _results.value
+            val staleSuggestions = previous.web.filter { it.isSuggestion }
             var results = rank(query, apps, settings, calculation, conversion, emptyList(), emptyList())
-                .copy(web = listOf(webSearch), webProviderName = webName)
-            _results.value = results
+                .copy(webProviderName = webName)
+            _results.value = results.copy(
+                contacts = previous.contacts,
+                files = previous.files,
+                web = listOf(webSearch) + staleSuggestions,
+            )
 
             // Then everything that has to hit a database or the network. Debounced a little so
             // fast typing doesn't spawn a query per key.
@@ -183,15 +191,13 @@ class FinderSearch(private val launcher: LawnchairLauncher) {
 
             rates?.await()?.let { conversion = Conversions.convert(query, it) }
             results = rank(query, apps, settings, calculation, conversion, contacts.await(), files.await())
-                .copy(web = listOf(webSearch), webProviderName = webName)
-            _results.value = results
+                .copy(webProviderName = webName)
+            _results.value = results.copy(web = listOf(webSearch) + staleSuggestions)
 
             val suggestions = withTimeoutOrNull(WEB_TIMEOUT_MS) {
                 webSuggestions(webProvider, query)
             }.orEmpty()
-            if (suggestions.isNotEmpty()) {
-                _results.value = results.copy(web = listOf(webSearch) + suggestions)
-            }
+            _results.value = results.copy(web = listOf(webSearch) + suggestions)
         }
     }
 

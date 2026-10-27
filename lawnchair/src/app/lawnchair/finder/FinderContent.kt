@@ -117,11 +117,12 @@ internal fun FinderContent(
         if (listState.isScrollInProgress) onScrolled()
     }
 
-    // Results only count once they're for the current text.
-    val current = results.takeIf { it.query == query.trim() } ?: FinderResults(query = query.trim())
+    // Keep showing the last results while the new ones load, but only let enter open a
+    // result that's actually for the current text.
+    val current = results
     val primary = current.primary
     val openPrimary = {
-        if (query.isNotBlank()) primary?.let(onOpen)
+        if (query.isNotBlank() && current.query == query.trim()) primary?.let(onOpen)
     }
 
     Box(
