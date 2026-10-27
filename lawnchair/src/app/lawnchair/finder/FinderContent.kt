@@ -5,6 +5,7 @@ import android.graphics.drawable.Icon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,6 +63,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -94,6 +97,7 @@ internal fun FinderContent(
     isDark: Boolean,
     search: FinderSearch,
     onOpen: (FinderItem) -> Unit,
+    onAppLongPress: AppLongPress,
     onDismiss: () -> Unit,
     onScrolled: () -> Unit,
 ) {
@@ -169,11 +173,11 @@ internal fun FinderContent(
                     if (suggestions.isNotEmpty()) {
                         header("App Suggestions", colors)
                         item(key = "suggestions") {
-                            Card(colors) { AppGrid(suggestions, null, colors, onOpen) }
+                            Card(colors) { AppGrid(suggestions, null, colors, onOpen, onAppLongPress) }
                         }
                     }
                 } else {
-                    results(current, primary?.key, colors, search, onOpen)
+                    results(current, primary?.key, colors, search, onOpen, onAppLongPress)
                 }
             }
         }
@@ -270,17 +274,18 @@ private fun LazyListScope.results(
     colors: FinderColors,
     search: FinderSearch,
     onOpen: (FinderItem) -> Unit,
+    onAppLongPress: AppLongPress,
 ) {
     results.topHit?.let { hit ->
         header("Top Hit", colors)
         item(key = "top:${hit.key}") {
-            Card(colors) { TopHit(hit, colors, search, onOpen) }
+            Card(colors) { TopHit(hit, colors, search, onOpen, onAppLongPress) }
         }
     }
     if (results.apps.isNotEmpty()) {
         header("Apps", colors)
         item(key = "apps") {
-            Card(colors) { AppGrid(results.apps, highlighted, colors, onOpen) }
+            Card(colors) { AppGrid(results.apps, highlighted, colors, onOpen, onAppLongPress) }
         }
     }
     section("Settings", results.settings, colors) { item, first ->
@@ -362,17 +367,27 @@ private fun Card(colors: FinderColors, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun TopHit(hit: FinderItem, colors: FinderColors, search: FinderSearch, onOpen: (FinderItem) -> Unit) {
+private fun TopHit(
+    hit: FinderItem,
+    colors: FinderColors,
+    search: FinderSearch,
+    onOpen: (FinderItem) -> Unit,
+    onAppLongPress: AppLongPress,
+) {
     when (hit) {
-        is FinderItem.App -> ResultRow(
-            icon = { AppIcon(hit.app, 54.dp) },
-            title = hit.app.title?.toString().orEmpty(),
-            subtitle = null,
-            highlighted = true,
-            colors = colors,
-            large = true,
-            onClick = { onOpen(hit) },
-        )
+        is FinderItem.App -> {
+            val iconBounds = remember { IconBounds() }
+            ResultRow(
+                icon = { AppIcon(hit.app, 54.dp, iconBounds) },
+                title = hit.app.title?.toString().orEmpty(),
+                subtitle = null,
+                highlighted = true,
+                colors = colors,
+                large = true,
+                onClick = { onOpen(hit) },
+                onLongClick = { onAppLongPress(hit.app, iconBounds.rect) },
+            )
+        }
 
         is FinderItem.Calculation -> BigValue(
             icon = { Image(painterResource(R.drawable.calculator), null, Modifier.size(44.dp).clip(RoundedCornerShape(11.dp))) },
@@ -494,6 +509,7 @@ private fun ResultRow(
     onClick: () -> Unit,
     showDivider: Boolean = false,
     large: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Column {
         if (showDivider && !highlighted) {
@@ -510,7 +526,7 @@ private fun ResultRow(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(if (highlighted) colors.highlight else Color.Transparent)
-                .clickable(onClick = onClick)
+                .combinedClickable(onLongClick = onLongClick, onClick = onClick)
                 .padding(horizontal = 10.dp, vertical = if (large) 10.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -534,22 +550,32 @@ private fun ResultRow(
 }
 
 @Composable
-private fun AppGrid(apps: List<AppInfo>, highlighted: String?, colors: FinderColors, onOpen: (FinderItem) -> Unit) {
+private fun AppGrid(
+    apps: List<AppInfo>,
+    highlighted: String?,
+    colors: FinderColors,
+    onOpen: (FinderItem) -> Unit,
+    onAppLongPress: AppLongPress,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         apps.chunked(GRID_COLUMNS).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { app ->
                     val item = FinderItem.App(app)
+                    val iconBounds = remember { IconBounds() }
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (item.key == highlighted) colors.highlight else Color.Transparent)
-                            .clickable { onOpen(item) }
+                            .combinedClickable(
+                                onLongClick = { onAppLongPress(app, iconBounds.rect) },
+                                onClick = { onOpen(item) },
+                            )
                             .padding(vertical = 10.dp, horizontal = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        AppIcon(app, 56.dp)
+                        AppIcon(app, 56.dp, iconBounds)
                         Spacer(Modifier.height(6.dp))
                         Text(
                             app.title?.toString().orEmpty(),
@@ -566,11 +592,27 @@ private fun AppGrid(apps: List<AppInfo>, highlighted: String?, colors: FinderCol
     }
 }
 
+/** Long press on an app, with where its icon is drawn, in the finder's own coordinates. */
+internal typealias AppLongPress = (AppInfo, android.graphics.Rect) -> Unit
+
+/** Where an [AppIcon] was last laid out, so a long press can pick it up from there. */
+private class IconBounds {
+    val rect = android.graphics.Rect()
+}
+
 @Composable
-private fun AppIcon(app: AppInfo, size: Dp) {
+private fun AppIcon(app: AppInfo, size: Dp, bounds: IconBounds? = null) {
     val context = LocalContext.current
     val drawable = remember(app) { app.newIcon(context) }
-    DrawableImage(drawable, size)
+    val modifier = if (bounds == null) {
+        Modifier
+    } else {
+        Modifier.onGloballyPositioned { coords ->
+            val r = coords.boundsInRoot()
+            bounds.rect.set(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
+        }
+    }
+    DrawableImage(drawable, size, modifier)
 }
 
 @Composable

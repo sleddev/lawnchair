@@ -108,6 +108,8 @@ public class BaseDepthControllerImpl implements BaseDepthController {
      * @see android.service.wallpaper.WallpaperService.Engine#onZoomChanged(float)
      */
     private float mDepth;
+    // Lawnchair: whether the workspace currently has the folder style blur on it.
+    private boolean mFolderBlurApplied;
     // Used just for animating wallpaper zoom without affecting blur.
     private final AnimatedFloat mWallpaperZoomOnly = new AnimatedFloat(this::applyDepthAndBlur);
 
@@ -400,11 +402,18 @@ public class BaseDepthControllerImpl implements BaseDepthController {
         // icons are blurred more than the wallpaper so they blend into it, like One UI.
         if (folderDepth.getValue() > 0f && mCurrentBlur > 0) {
             float folderBlur = mCurrentBlur * FOLDER_WORKSPACE_BLUR_MULTIPLIER;
+            if (mDepth > 0f && folderDepth.getValue() < mDepth) {
+                // A deeper state (like dragging out of the folder) sets the total depth, so fade
+                // the icon blur with the folder itself.
+                folderBlur *= folderDepth.getValue() / mDepth;
+            }
             RenderEffect blurEffect = RenderEffect.createBlurEffect(
                     folderBlur, folderBlur, Shader.TileMode.DECAL);
             mLauncher.getDepthBlurTargets().forEach(target -> target.setRenderEffect(blurEffect));
+            mFolderBlurApplied = true;
             return true;
         }
+        mFolderBlurApplied = false;
 
         // Stuck-blur bug: AllAppsState.shouldBlurWorkspace(NORMAL) is true during close, and a
         // skipped/interrupted apply can leave RenderEffect on workspace/hotseat icons after home
@@ -464,6 +473,11 @@ public class BaseDepthControllerImpl implements BaseDepthController {
             // leaving blur stuck. Force a re-apply when clearing.
             if (depthF == 0f && mCurrentBlur != 0) {
                 applyDepthAndBlur();
+            } else if (mFolderBlurApplied) {
+                // Lawnchair: a folder (or the finder) is closing under a deeper state, like while
+                // dragging an icon out of it. The total depth doesn't change, but the icon blur
+                // still has to follow the folder.
+                blurWorkspaceDepthTargets();
             }
             return;
         }

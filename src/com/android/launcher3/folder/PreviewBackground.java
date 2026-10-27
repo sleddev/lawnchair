@@ -194,6 +194,10 @@ public class PreviewBackground extends DelegatedCellDrawing {
         TypedArray ta = context.getTheme().obtainStyledAttributes(R.styleable.FolderIconPreview);
         ColorOption dotColorOption = PreferenceCacheExtensionsKt.firstCached(preferenceManager2.getNotificationDotColor());
         mDotColor = dotColorOption.getColorPreferenceEntry().getLightColor().invoke(context);
+        if (mDotColor == 0) {
+            // LC: the default dot color, same as app icons.
+            mDotColor = Themes.getAttrColor(context, R.attr.notificationDotColor);
+        }
         mStrokeColor = ColorTokens.FolderIconBorderColor.resolveColor(context);
         mBgColor = LawnchairUtilsKt.resolveFolderPreviewColor(context);
         mBorderColor = LawnchairUtilsKt.resolveFolderPreviewBorderColor(context);

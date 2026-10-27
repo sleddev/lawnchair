@@ -6,8 +6,11 @@ import android.animation.ValueAnimator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.graphics.Rect
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.inputmethod.InputMethodManager
@@ -20,8 +23,16 @@ import app.lawnchair.ui.theme.LawnchairTheme
 import app.lawnchair.util.ProvideLifecycleState
 import com.android.app.animation.Interpolators
 import com.android.launcher3.AbstractFloatingView
+import com.android.launcher3.BubbleTextView
+import com.android.launcher3.DragSource
+import com.android.launcher3.DropTarget
+import com.android.launcher3.R
 import com.android.launcher3.Utilities
+import com.android.launcher3.dragndrop.DragController
+import com.android.launcher3.dragndrop.DragOptions
+import com.android.launcher3.model.data.AppInfo
 import com.android.launcher3.views.BaseDragLayer
+import kotlin.math.roundToInt
 
 /**
  * An iOS Spotlight style universal search, pulled down from the home screen. The home screen
@@ -30,7 +41,9 @@ import com.android.launcher3.views.BaseDragLayer
  * It follows the finger while being pulled down ([setDragProgress]), then [settle]s open or
  * closed.
  */
-class FinderView(private val launcher: LawnchairLauncher) : AbstractFloatingView(launcher, null) {
+class FinderView(private val launcher: LawnchairLauncher) :
+    AbstractFloatingView(launcher, null),
+    DragSource {
 
     private val composeView = ComposeView(launcher)
     private val search = FinderSearch(launcher)
@@ -50,6 +63,11 @@ class FinderView(private val launcher: LawnchairLauncher) : AbstractFloatingView
     private var animator: ValueAnimator? = null
     private var closing = false
 
+    // A real, invisible app icon laid over a long-pressed result, so the regular popup and
+    // drag and drop code have a view to work with.
+    private var dragIcon: BubbleTextView? = null
+    private var dragIconListener: DragController.DragListener? = null
+
     init {
         layoutParams = BaseDragLayer.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { ignoreInsets = true }
         composeView.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
@@ -62,6 +80,7 @@ class FinderView(private val launcher: LawnchairLauncher) : AbstractFloatingView
                         isDark = Utilities.isDarkTheme(launcher),
                         search = search,
                         onOpen = ::open,
+                        onAppLongPress = ::startDrag,
                         onDismiss = { close(true) },
                         onScrolled = ::hideKeyboard,
                     )
@@ -127,6 +146,8 @@ class FinderView(private val launcher: LawnchairLauncher) : AbstractFloatingView
     private fun removeFromParent() {
         progress = 0f
         search.destroy()
+        // A drag that's still going needs its icon, and cleans it up itself when it ends.
+        if (!launcher.dragController.isDragging) removeDragIcon()
         (parent as? ViewGroup)?.removeView(this)
     }
 
@@ -151,6 +172,79 @@ class FinderView(private val launcher: LawnchairLauncher) : AbstractFloatingView
             is FinderItem.Web -> start(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(item.url)))
         }
     }
+
+    /** Shows the app's popup over [iconBounds], and lets it be dragged out onto the home screen. */
+    private fun startDrag(app: AppInfo, iconBounds: Rect) {
+        if (closing || iconBounds.isEmpty) return
+        if (launcher.isWorkspaceLocked || launcher.dragController.isDragging) return
+        hideKeyboard()
+        removeDragIcon()
+
+        val dragLayer = launcher.dragLayer
+        val icon = launcher.layoutInflater.inflate(R.layout.all_apps_icon, dragLayer, false) as BubbleTextView
+        icon.applyFromApplicationInfo(app)
+        icon.alpha = 0f
+        icon.isClickable = false
+        icon.isLongClickable = false
+        icon.isFocusable = false
+        icon.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+
+        // Lay it out at its regular size, then scale it so its icon sits exactly on the one in
+        // the finder. The drag preview and popup both follow the view's scale.
+        val dp = launcher.deviceProfile
+        val width = dp.allAppsProfile.cellWidthPx
+        val height = dp.allAppsProfile.cellHeightPx
+        icon.measure(
+            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+        )
+        icon.layout(0, 0, width, height)
+        val ownBounds = Rect().also(icon::getIconBounds)
+        val scale = iconBounds.width().toFloat() / ownBounds.width()
+        icon.pivotX = 0f
+        icon.pivotY = 0f
+        icon.scaleX = scale
+        icon.scaleY = scale
+        // Positioned by layout rather than translation, which the icon resets when it's dragged.
+        val lp = BaseDragLayer.LayoutParams(width, height).apply {
+            customPosition = true
+            x = (iconBounds.left - ownBounds.left * scale).roundToInt()
+            y = (iconBounds.top - ownBounds.top * scale).roundToInt()
+        }
+        icon.layout(lp.x, lp.y, lp.x + width, lp.y + height)
+        dragLayer.addView(icon, lp)
+        dragIcon = icon
+
+        val listener = object : DragController.DragListener {
+            private var started = false
+
+            override fun onDragStart(dragObject: DropTarget.DragObject, options: DragOptions) {
+                // The icon (or one of its shortcuts) left the popup: get out of the way so it
+                // can be dropped on the home screen.
+                started = true
+                close(true)
+            }
+
+            override fun onDragEnd() {
+                // Ending without starting means the popup is just staying open.
+                if (started) removeDragIcon()
+            }
+        }
+        dragIconListener = listener
+        launcher.dragController.addDragListener(listener)
+
+        icon.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        launcher.workspace.beginDragShared(icon, this, DragOptions())
+    }
+
+    private fun removeDragIcon() {
+        dragIconListener?.let(launcher.dragController::removeDragListener)
+        dragIconListener = null
+        dragIcon?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        dragIcon = null
+    }
+
+    override fun onDropCompleted(target: View?, d: DropTarget.DragObject?, success: Boolean) {}
 
     private fun copy(text: String) {
         val clipboard = launcher.getSystemService(ClipboardManager::class.java)
