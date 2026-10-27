@@ -51,7 +51,11 @@ class VerticalSwipeTouchController(
                 .onEach { overrideSwipeUp = it != prefs.swipeUpGestureHandler.defaultValue }
                 .launchIn(this)
             prefs.swipeDownGestureHandler.get()
-                .onEach { overrideSwipeDown = it != prefs.swipeDownGestureHandler.defaultValue }
+                // LC: the finder follows the finger, so FinderTouchController handles it.
+                .onEach {
+                    overrideSwipeDown = it !is GestureHandlerConfig.OpenNotifications &&
+                        it !is GestureHandlerConfig.OpenFinder
+                }
                 .launchIn(this)
             // Override when a custom gesture handler is configured, as launcher does not handle these by default
             prefs.twoFingerSwipeUpGestureHandler.get()
