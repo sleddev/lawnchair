@@ -122,6 +122,8 @@ public class Hotseat extends FrameLayout implements Insettable {
     // Lawnchair: iOS style glass dock behind the icons, unless the dock background pref is used.
     @Nullable
     private GlassDockBackground mGlassDock;
+    // Lawnchair: how far the hotseat is extended upwards so it contains the whole glass dock.
+    private int mGlassDockOverflow;
 
     PreferenceManager2 preferenceManager2;
     PreferenceManager preferenceManager;
@@ -279,6 +281,12 @@ public class Hotseat extends FrameLayout implements Insettable {
                 getWidth() - margin, getGlassDockBottom(pagerTop, mPagedView.getHeight()));
     }
 
+    /** Height of the icon pager in a hotseat bar with the given layout padding. */
+    private float getGlassDockPagerHeight(DeviceProfile dp, Rect padding) {
+        return dp.hotseatBarSizePx - padding.top - padding.bottom
+                - (mPagedView.isPagingEnabled() ? mPageIndicatorHeight : 0);
+    }
+
     private float getGlassDockTop(float pagerTop, float pagerHeight) {
         DeviceProfile dp = mActivity.getDeviceProfile();
         float cellHeight = pagerHeight / Math.max(1, dp.numHotseatRows);
@@ -304,10 +312,7 @@ public class Hotseat extends FrameLayout implements Insettable {
             return -1;
         }
         Rect padding = dp.getHotseatLayoutPadding(getContext());
-        boolean showIndicator = mPagedView.isPagingEnabled();
-        float pagerHeight = dp.hotseatBarSizePx - padding.top - padding.bottom
-                - (showIndicator ? mPageIndicatorHeight : 0);
-        float dockTop = getGlassDockTop(padding.top, pagerHeight);
+        float dockTop = getGlassDockTop(padding.top, getGlassDockPagerHeight(dp, padding));
         return Math.round(dp.hotseatBarSizePx - dockTop + getResources().getDimension(
                 R.dimen.dock_glass_page_indicator_gap));
     }
@@ -519,6 +524,16 @@ public class Hotseat extends FrameLayout implements Insettable {
                     getResources().getDimension(R.dimen.dock_glass_margin_horizontal) + gap / 2);
             padding.left = sidePadding + insets.left;
             padding.right = sidePadding + insets.right;
+
+            // The glass dock reaches above the hotseat bar. Extend the view upwards so the dock
+            // stays inside its bounds: a RenderEffect (like the folder blur) renders the view
+            // into a layer clipped to them, which cut off the top of the dock.
+            mGlassDockOverflow = Math.max(0, (int) Math.ceil(-getGlassDockTop(padding.top,
+                    getGlassDockPagerHeight(grid, padding))));
+            lp.height += mGlassDockOverflow;
+            padding.top += mGlassDockOverflow;
+        } else {
+            mGlassDockOverflow = 0;
         }
         setPadding(padding.left, padding.top, padding.right, padding.bottom);
         setLayoutParams(lp);
@@ -552,7 +567,8 @@ public class Hotseat extends FrameLayout implements Insettable {
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         int yThreshold = getMeasuredHeight() - getPaddingBottom();
-        if (ev.getY() > yThreshold || isTouchOnQsb(ev)) {
+        // Lawnchair: the space added above the glass dock belongs to the workspace.
+        if (ev.getY() > yThreshold || ev.getY() < mGlassDockOverflow || isTouchOnQsb(ev)) {
             return false;
         }
 
