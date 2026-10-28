@@ -103,7 +103,8 @@ constructor(
         val currentPrefs1State = prefs1State()
         val appShapeKey = currentAppShape.getHashString() + currentPrefs1State
         val folderShapeKey = currentFolderShape.getHashString() + currentPrefs1State
-        val combinedKey = "$appShapeKey:$folderShapeKey"
+        // The suffix versions how icons are drawn, so cached icons are redrawn when that changes.
+        val combinedKey = "$appShapeKey:$folderShapeKey:$ICON_RENDER_VERSION"
 
         val appShape =
             if (oldState != null && (oldState.iconShape as? PathShapeDelegate)?.iconShape == currentAppShape) {
@@ -142,3 +143,6 @@ constructor(
 private val MONO_THEME_CONTROLLER = MonoIconThemeController()
 private val FORCED_MONO_THEME_CONTROLLER = MonoIconThemeController(shouldForceThemeIcon = true)
 private const val TAG = "LawnchairThemeManager"
+
+// Bump when the icon rendering changes (e.g. the icon shadow).
+private const val ICON_RENDER_VERSION = "lifted1"

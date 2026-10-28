@@ -230,6 +230,13 @@ class TodayWidgetHostView(context: Context) : AppWidgetHostView(context) {
         return true
     }
 
+    // The page's card is the widget's frame, so drop the default padding around the widget, which
+    // left a second, inset frame inside the card and cost the widget space.
+    override fun setAppWidget(appWidgetId: Int, info: AppWidgetProviderInfo?) {
+        super.setAppWidget(appWidgetId, info)
+        setPadding(0, 0, 0, 0)
+    }
+
     fun updateSize(widthDp: Float, heightDp: Float) {
         @Suppress("DEPRECATION")
         updateAppWidgetSize(Bundle(), widthDp.toInt(), heightDp.toInt(), widthDp.toInt(), heightDp.toInt())

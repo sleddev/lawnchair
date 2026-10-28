@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -67,6 +68,7 @@ import app.lawnchair.smartspace.model.SmartspaceTarget
 import app.lawnchair.smartspace.provider.SmartspaceProvider
 import app.lawnchair.ui.preferences.PreferenceActivity
 import app.lawnchair.ui.preferences.navigation.Smartspace
+import app.lawnchair.ui.theme.Glass
 import com.android.launcher3.Utilities
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import java.util.Date
@@ -84,24 +86,14 @@ interface TodayHost {
 class TodayColors(val dark: Boolean) {
     val card = if (dark) Color(0xFF1C1C1E).copy(alpha = 0.55f) else Color.White.copy(alpha = 0.6f)
 
-    // Glass: a touch lighter at the top, like light falling on it.
-    val cardFill = if (dark) {
-        Brush.verticalGradient(listOf(Color(0xFF2C2C30).copy(alpha = 0.62f), Color(0xFF161618).copy(alpha = 0.58f)))
-    } else {
-        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.72f), Color.White.copy(alpha = 0.52f)))
-    }
-
-    // A hairline that catches the light along the top edge and fades out towards the bottom.
-    val cardBorder = Brush.verticalGradient(
-        listOf(
-            Color.White.copy(alpha = if (dark) 0.20f else 0.65f),
-            Color.White.copy(alpha = if (dark) 0.05f else 0.18f),
-        ),
-    )
+    // Glass: a touch lighter at the top, like light falling on it, with a hairline that catches
+    // the light along the top edge. Shared with the finder and the app drawer.
+    val cardFill = Glass.cardFill(dark)
+    val cardBorder = Glass.border(dark)
     val text = if (dark) Color.White else Color(0xFF111111)
     val secondary = if (dark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.5f)
     val track = if (dark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.1f)
-    val pageText = Color.White
+    val pageText = Glass.PageText
     val pill = if (dark) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.35f)
     val pillBorder = Color.White.copy(alpha = if (dark) 0.16f else 0.4f)
 }
@@ -128,13 +120,13 @@ fun TodayCardContent(card: TodayCard, size: TodaySize, host: TodayHost, colors: 
 }
 
 @Composable
-private fun CardTitle(icon: ImageVector, title: String, tint: Color, colors: TodayColors) {
+private fun CardTitle(icon: ImageVector, title: String, tint: Color, colors: TodayColors, textColor: Color = colors.secondary) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
         Spacer(Modifier.width(5.dp))
         Text(
             title.uppercase(),
-            color = colors.secondary,
+            color = textColor,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -183,11 +175,7 @@ private fun WeatherCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
     ) {
         if (action == null || temperature == null) {
             Column(Modifier.fillMaxSize()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Cloud, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("WEATHER", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
+                CardTitle(Icons.Rounded.Cloud, "Weather", Color.White, colors, WeatherTitle)
                 Spacer(Modifier.weight(1f))
                 Text("No weather yet", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
@@ -202,30 +190,31 @@ private fun WeatherCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
         }
         val icon = remember(action.icon) { action.icon?.loadDrawable(context) }
         val clock = remember(host.refreshKey) { DateFormat.getTimeFormat(context).format(Date()) }
-        if (size == TodaySize.Small) {
-            Column(Modifier.fillMaxSize()) {
-                Text("Now", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(temperature.toString(), color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.Light)
-                Spacer(Modifier.weight(1f))
+        val condition = action.contentDescription?.toString()?.takeIf { it.isNotBlank() && it != temperature.toString() }
+        val footer = condition ?: "Updated $clock"
+        Column(Modifier.fillMaxSize()) {
+            CardTitle(Icons.Rounded.Cloud, "Weather", Color.White, colors, WeatherTitle)
+            Spacer(Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    temperature.toString(),
+                    color = Color.White,
+                    fontSize = if (size == TodaySize.Small) 46.sp else 54.sp,
+                    fontWeight = FontWeight.Light,
+                    modifier = Modifier.weight(1f),
+                )
                 if (icon != null) {
-                    Image(rememberDrawablePainter(icon), contentDescription = null, modifier = Modifier.size(28.dp))
-                }
-                Text("Updated $clock", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp, maxLines = 1)
-            }
-        } else {
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Now", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Text(temperature.toString(), color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.Light)
-                    Text("Updated $clock", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
-                }
-                if (icon != null) {
-                    Image(rememberDrawablePainter(icon), contentDescription = null, modifier = Modifier.size(64.dp))
+                    val iconSize = if (size == TodaySize.Small) 40.dp else 56.dp
+                    Image(rememberDrawablePainter(icon), contentDescription = null, modifier = Modifier.size(iconSize))
                 }
             }
+            Spacer(Modifier.weight(1f))
+            Text(footer, color = WeatherTitle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
+
+private val WeatherTitle = Color.White.copy(alpha = 0.85f)
 
 /** A sky for the time of day: blue by day, warm around sunrise and sunset, deep blue at night. */
 private fun weatherGradient(): Brush {
@@ -248,65 +237,81 @@ private fun BatteryCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
     val context = LocalContext.current
     val entries by remember(host.refreshKey) { batteryLevels(context) }.collectAsState(initial = emptyList())
     val needsBluetooth = remember(host.refreshKey) { Utilities.ATLEAST_S && !context.hasPermission(BLUETOOTH_PERMISSION) }
-    val slots = if (size == TodaySize.Small) 2 else 4
-    val shown = entries.take(slots)
+    val shown = entries.take(if (size == TodaySize.Small) 2 else 4)
 
-    if (size == TodaySize.Small && shown.size <= 1) {
-        Column(
-            Modifier.fillMaxSize().padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            shown.firstOrNull()?.let { entry ->
-                BatteryRing(entry, colors, 84.dp)
-                Spacer(Modifier.height(10.dp))
-                Text("${entry.level}%", color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
-    } else if (size == TodaySize.Small) {
-        Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            shown.forEach { entry ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BatteryRing(entry, colors, 44.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text("${entry.level}%", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-    } else {
-        Row(
-            Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            for (i in 0 until slots) {
-                val entry = shown.getOrNull(i)
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                    if (entry != null) {
-                        BatteryRing(entry, colors, 58.dp)
-                        Spacer(Modifier.height(8.dp))
-                        Text("${entry.level}%", color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                    } else if (i == shown.size && needsBluetooth) {
-                        Box(
-                            Modifier
-                                .size(58.dp)
-                                .clip(CircleShape)
-                                .background(colors.track)
-                                .clickableNoRipple { host.requestPermissions(arrayOf(BLUETOOTH_PERMISSION)) },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Rounded.Bluetooth, contentDescription = "Show Bluetooth devices", tint = colors.secondary)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text("Allow", color = colors.secondary, fontSize = 13.sp)
-                    } else {
-                        Box(Modifier.size(58.dp).clip(CircleShape).background(colors.track.copy(alpha = colors.track.alpha / 2)))
-                        Spacer(Modifier.height(8.dp))
-                        Text(" ", fontSize = 17.sp)
+    Column(Modifier.fillMaxSize().padding(14.dp)) {
+        CardTitle(Icons.Rounded.BatteryFull, "Batteries", BatteryGreen, colors)
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            when {
+                // One device: the ring with its level beside it, rather than a row of empty slots.
+                shown.size == 1 && size != TodaySize.Small -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    BatteryRing(shown[0], colors, 72.dp)
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text("${shown[0].level}%", color = colors.text, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (shown[0].charging) "${shown[0].name} · Charging" else shown[0].name,
+                            color = colors.secondary,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (needsBluetooth) {
+                        Spacer(Modifier.width(24.dp))
+                        AllowBluetooth(host, colors)
                     }
                 }
+
+                size == TodaySize.Small && shown.size <= 1 -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    shown.firstOrNull()?.let { entry ->
+                        BatteryRing(entry, colors, 72.dp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("${entry.level}%", color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                size == TodaySize.Small -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    shown.forEach { entry ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            BatteryRing(entry, colors, 44.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text("${entry.level}%", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    shown.forEach { entry ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            BatteryRing(entry, colors, 58.dp)
+                            Spacer(Modifier.height(8.dp))
+                            Text("${entry.level}%", color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    if (needsBluetooth && shown.size < 4) AllowBluetooth(host, colors)
+                }
             }
         }
+    }
+}
+
+/** Asks for Bluetooth access, so connected headphones and watches show up too. */
+@Composable
+private fun AllowBluetooth(host: TodayHost, colors: TodayColors) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(58.dp)
+                .clip(CircleShape)
+                .background(colors.track)
+                .clickableNoRipple { host.requestPermissions(arrayOf(BLUETOOTH_PERMISSION)) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Bluetooth, contentDescription = "Show Bluetooth devices", tint = colors.secondary)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Allow", color = colors.secondary, fontSize = 13.sp)
     }
 }
 
@@ -380,8 +385,8 @@ private fun CalendarCard(size: TodaySize, host: TodayHost, colors: TodayColors) 
     @Composable
     fun DateBlock() {
         Column {
-            Text(dayName.uppercase(), color = CalendarRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text(dayNumber, color = colors.text, fontSize = 36.sp, fontWeight = FontWeight.Light, lineHeight = 38.sp)
+            CardTitle(Icons.Rounded.CalendarMonth, dayName, CalendarRed, colors, CalendarRed)
+            Text(dayNumber, color = colors.text, fontSize = 36.sp, fontWeight = FontWeight.Light, lineHeight = 40.sp)
         }
     }
 

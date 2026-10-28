@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.toArgb
@@ -94,6 +95,7 @@ data class QsbIconState(
  * @property strokeColor The color value used for the QSB's outline/border.
  * @property strokeWidthPx The thickness of the QSB's border in pixels.
  * @property cornerRadiusPx The radius used for the rounded corners of the QSB in pixels.
+ * @property strokeBrush When set, draws the border with this brush instead of [strokeColor].
  */
 @Immutable
 data class QsbStyle(
@@ -103,6 +105,7 @@ data class QsbStyle(
     @param:ColorInt val strokeColor: Int,
     val strokeWidthPx: Float,
     val cornerRadiusPx: Float,
+    val strokeBrush: Brush? = null,
 )
 
 /**
@@ -357,7 +360,8 @@ fun LawnQsbUi(
             ),
         )
         .addIf(style.strokeWidthPx > 0f) {
-            border(strokeWidth, ComposeColor(style.strokeColor), shape)
+            val brush = style.strokeBrush
+            if (brush != null) border(strokeWidth, brush, shape) else border(strokeWidth, ComposeColor(style.strokeColor), shape)
         }
 
     Row(

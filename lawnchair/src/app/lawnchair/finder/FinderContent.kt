@@ -4,6 +4,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -34,6 +35,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -53,7 +55,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -68,7 +72,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -76,18 +79,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.android.launcher3.R
+import app.lawnchair.ui.theme.Glass
+import com.android.launcher3.BaseActivity
 import com.android.launcher3.model.data.AppInfo
+import com.android.launcher3.views.ActivityContext
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 
-private class FinderColors(dark: Boolean) {
-    val scrim = if (dark) Color.Black.copy(alpha = 0.32f) else Color.White.copy(alpha = 0.22f)
-    val card = if (dark) Color.White.copy(alpha = 0.11f) else Color.White.copy(alpha = 0.55f)
-    val field = if (dark) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.7f)
+private class FinderColors(val dark: Boolean) {
+    // The same glass as the Today page and the app drawer, see Glass.
+    val scrim = Glass.scrimBrush(dark)
+    val card = Glass.cardFill(dark)
+    val border = Glass.border(dark)
+    val field = Color(Glass.field(dark))
     val highlight = if (dark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.07f)
     val separator = if (dark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.08f)
     val text = if (dark) Color.White else Color(0xFF111111)
     val secondary = if (dark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.5f)
+
+    // Text straight on the scrim, like the Today page's date: white in both themes.
+    val pageText = Glass.PageText
+    val pageShadow = Shadow(Color.Black.copy(alpha = 0.35f), Offset(0f, 1f), 8f)
 }
 
 @Composable
@@ -163,8 +174,8 @@ internal fun FinderContent(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
+                    start = Glass.ScreenMargin,
+                    end = Glass.ScreenMargin,
                     top = 4.dp,
                     bottom = bottomInsets.calculateBottomPadding() + 24.dp,
                 ),
@@ -196,20 +207,21 @@ private fun SearchField(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = Glass.ScreenMargin),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             modifier = Modifier
                 .weight(1f)
-                .height(46.dp)
-                .clip(RoundedCornerShape(23.dp))
+                .height(Glass.FieldHeight)
+                .clip(Glass.FieldShape)
                 .background(colors.field)
-                .padding(horizontal = 12.dp),
+                .border(0.75.dp, colors.border, Glass.FieldShape)
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Rounded.Search, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Rounded.Search, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(10.dp))
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (query.isEmpty()) {
                     Text("Search", color = colors.secondary, fontSize = 17.sp, maxLines = 1)
@@ -246,8 +258,9 @@ private fun SearchField(
         }
         Text(
             text = "Cancel",
-            color = colors.text,
+            color = colors.pageText,
             fontSize = 17.sp,
+            style = TextStyle(shadow = colors.pageShadow),
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .clickable(onClick = onCancel)
@@ -258,12 +271,15 @@ private fun SearchField(
 
 private fun LazyListScope.header(title: String, colors: FinderColors) {
     item(key = "header:$title") {
+        // Like the Today page's labels: small capitals, straight on the scrim.
         Text(
-            text = title,
-            color = colors.secondary,
-            fontSize = 14.sp,
+            text = title.uppercase(),
+            color = colors.pageText.copy(alpha = 0.85f),
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 6.dp, top = 18.dp, bottom = 8.dp),
+            letterSpacing = 0.8.sp,
+            style = TextStyle(shadow = colors.pageShadow),
+            modifier = Modifier.padding(start = 8.dp, top = 20.dp, bottom = 8.dp),
         )
     }
 }
@@ -356,8 +372,9 @@ private fun Card(colors: FinderColors, content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
+            .clip(Glass.CardShape)
             .background(colors.card)
+            .border(0.75.dp, colors.border, Glass.CardShape)
             // Taps between the rows shouldn't dismiss the finder.
             .pointerInput(Unit) { detectTapGestures { } }
             .padding(6.dp),
@@ -381,7 +398,7 @@ private fun TopHit(
                 icon = { AppIcon(hit.app, 54.dp, iconBounds) },
                 title = hit.app.title?.toString().orEmpty(),
                 subtitle = null,
-                highlighted = true,
+                highlighted = false,
                 colors = colors,
                 large = true,
                 onClick = { onOpen(hit) },
@@ -390,7 +407,7 @@ private fun TopHit(
         }
 
         is FinderItem.Calculation -> BigValue(
-            icon = { Image(painterResource(R.drawable.calculator), null, Modifier.size(44.dp).clip(RoundedCornerShape(11.dp))) },
+            icon = { VectorBadge(Icons.Rounded.Calculate, colors) },
             caption = hit.expression,
             value = "= ${hit.result}",
             extra = emptyList(),
@@ -411,7 +428,7 @@ private fun TopHit(
             icon = { SettingsIcon(search, 54.dp) },
             title = hit.entry.title,
             subtitle = "Settings › ${hit.entry.section}",
-            highlighted = true,
+            highlighted = false,
             colors = colors,
             large = true,
             onClick = { onOpen(hit) },
@@ -421,7 +438,7 @@ private fun TopHit(
             icon = { IconImage(hit.icon, 54.dp, CircleShape) },
             title = hit.name,
             subtitle = hit.detail,
-            highlighted = true,
+            highlighted = false,
             colors = colors,
             large = true,
             onClick = { onOpen(hit) },
@@ -431,7 +448,7 @@ private fun TopHit(
             icon = { IconImage(hit.icon, 54.dp, RoundedCornerShape(10.dp)) },
             title = hit.name,
             subtitle = hit.detail,
-            highlighted = true,
+            highlighted = false,
             colors = colors,
             large = true,
             onClick = { onOpen(hit) },
@@ -441,7 +458,7 @@ private fun TopHit(
             icon = { VectorBadge(Icons.Rounded.Search, colors) },
             title = hit.text,
             subtitle = null,
-            highlighted = true,
+            highlighted = false,
             colors = colors,
             large = true,
             onClick = { onOpen(hit) },
@@ -462,9 +479,8 @@ private fun BigValue(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(colors.highlight)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon()
@@ -557,6 +573,12 @@ private fun AppGrid(
     onOpen: (FinderItem) -> Unit,
     onAppLongPress: AppLongPress,
 ) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    // Icons and labels the same size as in the app drawer.
+    val profile = remember(context) { ActivityContext.lookupContext<BaseActivity>(context).deviceProfile.allAppsProfile }
+    val iconSize = with(density) { profile.iconSizePx.toDp() }
+    val labelSize = with(density) { profile.iconTextSizePx.toSp() }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         apps.chunked(GRID_COLUMNS).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
@@ -575,12 +597,12 @@ private fun AppGrid(
                             .padding(vertical = 10.dp, horizontal = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        AppIcon(app, 56.dp, iconBounds)
+                        AppIcon(app, iconSize, iconBounds)
                         Spacer(Modifier.height(6.dp))
                         Text(
                             app.title?.toString().orEmpty(),
                             color = colors.text,
-                            fontSize = 12.sp,
+                            fontSize = labelSize,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )

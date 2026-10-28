@@ -154,6 +154,10 @@ fun overrideAllAppsTextColor(textView: TextView) {
     val opacity = PreferenceManager.getInstance(context).drawerOpacity.get()
     if (luminance > 0.5f || opacity <= 0.3f) {
         textView.setTextColor(Themes.getAttrColor(context, R.attr.allAppsAlternateTextColor))
+    } else {
+        // LC: white on a dark drawer, like the labels on the home screen and in the finder,
+        // rather than the theme's grey.
+        textView.setTextColor(android.graphics.Color.WHITE)
     }
 }
 
@@ -204,21 +208,45 @@ fun resolveFolderPreviewColor(context: Context): Int {
     val custom = getCustomFolderColor(context)
     return if (custom != 0) {
         ColorUtils.setAlphaComponent(custom, getFolderPreviewAlpha(context))
-    } else {
+    } else if (Utilities.isDarkTheme(context)) {
         ColorUtils.setAlphaComponent(
             ColorTokens.FolderPreviewColor.resolveColor(context),
             (getFolderPreviewAlpha(context) * DEFAULT_FOLDER_PREVIEW_ALPHA).toInt(),
+        )
+    } else {
+        // Light frosted white. Anything thinner turns muddy grey over a dark wallpaper.
+        ColorUtils.setAlphaComponent(
+            android.graphics.Color.WHITE,
+            (getFolderPreviewAlpha(context) * LIGHT_FOLDER_PREVIEW_ALPHA).toInt(),
         )
     }
 }
 
 private const val DEFAULT_FOLDER_PREVIEW_ALPHA = 0.7f
+private const val LIGHT_FOLDER_PREVIEW_ALPHA = 0.82f
 
-/** Faint border around the closed-folder preview background. */
+/**
+ * Faint border around the closed-folder preview background. It's lit from the top: this is the
+ * color at the top, fading to [resolveFolderPreviewBorderBottomColor] at the bottom.
+ */
 fun resolveFolderPreviewBorderColor(context: Context): Int = if (Utilities.isDarkTheme(context)) {
-    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x17)
+    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x38)
 } else {
-    ColorUtils.setAlphaComponent(android.graphics.Color.BLACK, 0x0D)
+    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0xE6)
+}
+
+/** The bottom of the closed-folder preview border, see [resolveFolderPreviewBorderColor]. */
+fun resolveFolderPreviewBorderBottomColor(context: Context): Int = if (Utilities.isDarkTheme(context)) {
+    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x0A)
+} else {
+    ColorUtils.setAlphaComponent(android.graphics.Color.BLACK, 0x14)
+}
+
+/** A faint sheen at the top of the closed-folder preview background. */
+fun resolveFolderPreviewSheenColor(context: Context): Int = if (Utilities.isDarkTheme(context)) {
+    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x12)
+} else {
+    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x40)
 }
 
 /**
@@ -233,23 +261,18 @@ fun resolveFolderBackgroundColor(context: Context): Int {
     } else if (Utilities.isDarkTheme(context)) {
         ColorUtils.setAlphaComponent(android.graphics.Color.BLACK, 0x70)
     } else {
-        ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x90)
+        // Opaque enough to read as light glass even over a dark wallpaper.
+        ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0xD4)
     }
 }
 
-/** Default app drawer sheet tint over blur: the open folder panel's frosted tint. */
-fun getAllAppsGlassColor(context: Context): Int = if (Utilities.isDarkTheme(context)) {
-    android.graphics.Color.BLACK
-} else {
-    android.graphics.Color.WHITE
-}
-
-/** Faint border around the blurred app drawer sheet. */
-fun getAllAppsGlassBorderColor(context: Context): Int = if (Utilities.isDarkTheme(context)) {
-    ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0x1F)
-} else {
-    ColorUtils.setAlphaComponent(android.graphics.Color.BLACK, 0x14)
-}
+/**
+ * Default app drawer tint over blur. Dark in both themes, like the scrim under the Today page and
+ * the finder: the apps sit straight on it with white labels, and only cards and fields follow the
+ * theme.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun getAllAppsGlassColor(context: Context): Int = android.graphics.Color.BLACK
 
 /** Apply Lawnchair custom allapps colour to the provided colour */
 private fun getAllAppsBaseColor(context: Context, defaultColor: Int): Int {

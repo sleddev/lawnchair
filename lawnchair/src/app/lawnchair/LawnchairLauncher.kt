@@ -31,6 +31,8 @@ import android.window.SplashScreen
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import app.lawnchair.LawnchairApp.Companion.showQuickstepWarningIfNecessary
 import app.lawnchair.compat.LawnchairQuickstepCompat
 import app.lawnchair.data.AppDatabase
@@ -163,6 +165,13 @@ class LawnchairLauncher : QuickstepLauncher() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         layoutInflater.factory2 = LawnchairLayoutFactory(this)
+        // LC: a config change relaunch (e.g. switching dark mode) keeps the old window, which
+        // still points at the destroyed activity until super.onCreate is done. Compose views
+        // attached in the meantime would bind to that dead lifecycle and never update again.
+        window?.peekDecorView()?.apply {
+            setViewTreeLifecycleOwner(this@LawnchairLauncher)
+            setViewTreeSavedStateRegistryOwner(this@LawnchairLauncher)
+        }
         super.onCreate(savedInstanceState)
 
         prefs.launcherTheme.subscribeChanges(this, ::updateTheme)

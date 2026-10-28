@@ -3,8 +3,10 @@ package app.lawnchair.views
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Shader
 import android.os.Build
 import android.util.Log
 import android.view.View
@@ -36,6 +38,7 @@ class GlassDockBackground(private val view: View) {
     private val rect = RectF()
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val sheenPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = borderWidth
@@ -98,6 +101,7 @@ class GlassDockBackground(private val view: View) {
 
     private fun updateBounds(bounds: RectF) {
         rect.set(bounds)
+        updateShaders()
         blurDrawable?.setBounds(
             rect.left.toInt(),
             rect.top.toInt(),
@@ -108,7 +112,6 @@ class GlassDockBackground(private val view: View) {
     }
 
     private fun updateFill() {
-        val dark = Utilities.isDarkTheme(context)
         // Same tint as the open folder panel, which also sits on top of a blur.
         val folderColor = resolveFolderBackgroundColor(context)
         val folderAlpha = Color.alpha(folderColor) * getFolderBackgroundAlpha(context) / 255
@@ -118,7 +121,26 @@ class GlassDockBackground(private val view: View) {
             // Without blur, a more opaque tint keeps the icons readable.
             ColorUtils.setAlphaComponent(folderColor, maxOf(folderAlpha, 0xCC))
         }
-        borderPaint.color = if (dark) white(0.12f) else ColorUtils.setAlphaComponent(Color.BLACK, 0x14)
+        updateShaders()
+    }
+
+    // Light falls on the glass from above: the border catches it along the top edge and fades
+    // towards the bottom, and the top of the fill gets a faint sheen. Same as the Today cards.
+    private fun updateShaders() {
+        if (rect.isEmpty) return
+        val dark = Utilities.isDarkTheme(context)
+        borderPaint.shader = LinearGradient(
+            0f, rect.top, 0f, rect.bottom,
+            if (dark) white(0.22f) else white(0.85f),
+            if (dark) white(0.05f) else ColorUtils.setAlphaComponent(Color.BLACK, 0x12),
+            Shader.TileMode.CLAMP,
+        )
+        sheenPaint.shader = LinearGradient(
+            0f, rect.top, 0f, rect.top + rect.height() * 0.6f,
+            if (dark) white(0.07f) else white(0.3f),
+            Color.TRANSPARENT,
+            Shader.TileMode.CLAMP,
+        )
     }
 
     private fun updateBlurAlpha() {
@@ -143,6 +165,7 @@ class GlassDockBackground(private val view: View) {
             blurDrawable?.draw(canvas)
         }
         canvas.drawRoundRect(rect, cornerRadius, cornerRadius, fillPaint)
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, sheenPaint)
         val inset = borderWidth / 2
         canvas.drawRoundRect(
             rect.left + inset,

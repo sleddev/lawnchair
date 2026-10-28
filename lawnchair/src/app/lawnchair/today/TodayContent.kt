@@ -23,7 +23,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -68,12 +69,16 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
@@ -83,6 +88,7 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -104,7 +110,7 @@ class TodayPageState(
 ) {
     val editing = mutableStateOf(false)
 
-    /** True while a finger is down on an item in edit mode, so the page doesn't scroll. */
+    /** True while an item is being dragged in edit mode, so the page doesn't scroll. */
     var touchingItem = false
 
     val addSheetOpen = mutableStateOf(false)
@@ -127,6 +133,7 @@ fun TodayContent(
         Column(
             Modifier
                 .fillMaxSize()
+                .fadeUnderStatusBar(state.scrollState)
                 .verticalScroll(state.scrollState)
                 .statusBarsPadding()
                 .padding(top = 8.dp, bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp),
@@ -166,6 +173,33 @@ fun TodayContent(
     }
 }
 
+/**
+ * Fades content out as it scrolls up under the status bar, instead of running into the clock.
+ * It eases in over the first bit of scrolling, so nothing is faded while the page is at the top.
+ */
+private fun Modifier.fadeUnderStatusBar(scrollState: ScrollState): Modifier = composed {
+    val density = LocalDensity.current
+    val statusBar = WindowInsets.statusBars.getTop(density).toFloat()
+    val fade = with(density) { 28.dp.toPx() }
+    this
+        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            val strength = (scrollState.value / fade).coerceIn(0f, 1f)
+            if (strength == 0f) return@drawWithContent
+            val height = statusBar + fade
+            drawRect(
+                Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 1f - strength),
+                    statusBar / height to Color.Black.copy(alpha = 1f - strength),
+                    1f to Color.Black,
+                ),
+                size = androidx.compose.ui.geometry.Size(size.width, height),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+}
+
 @Composable
 private fun TopBar(editing: Boolean, colors: TodayColors, onAdd: () -> Unit, onDone: () -> Unit) {
     Box(
@@ -199,10 +233,10 @@ private fun DateHeader(host: TodayHost, colors: TodayColors) {
     val weekday = remember(now) { DateFormat.format("EEEE", now).toString() }
     val date = remember(now) { DateFormat.format(DateFormat.getBestDateTimePattern(java.util.Locale.getDefault(), "MMMMd"), now).toString() }
     Column(Modifier.padding(horizontal = TodayWidgets.GRID_MARGIN_DP.dp + 4.dp, vertical = 6.dp)) {
-        val shadow = Shadow(Color.Black.copy(alpha = 0.25f), Offset(0f, 2f), blurRadius = 12f)
+        val shadow = Shadow(Color.Black.copy(alpha = 0.4f), Offset(0f, 1f), blurRadius = 10f)
         Text(
             weekday.uppercase(),
-            color = colors.pageText.copy(alpha = 0.78f),
+            color = colors.pageText.copy(alpha = 0.9f),
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 1.2.sp,
@@ -263,6 +297,7 @@ private fun TodayGrid(
         }
     }
     val bounds = remember { mutableStateMapOf<String, Rect>() }
+    val haptics = LocalHapticFeedback.current
     var dragPointer by remember { mutableStateOf(Offset.Zero) }
     var grabOffset by remember { mutableStateOf(Offset.Zero) }
 
@@ -290,20 +325,11 @@ private fun TodayGrid(
                     ) {
                         TodayItemView(item, host, widgets, colors, editing)
                         if (editing) {
-                            // Takes every touch in edit mode: tap to resize, drag to move.
+                            // Takes every touch in edit mode: tap to resize, hold and drag to
+                            // move. A plain swipe still scrolls the page.
                             Box(
                                 Modifier
                                     .matchParentSize()
-                                    .pointerInput(item.id) {
-                                        awaitEachGesture {
-                                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                            state.touchingItem = true
-                                            do {
-                                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                            } while (event.changes.any { it.pressed })
-                                            state.touchingItem = false
-                                        }
-                                    }
                                     .pointerInput(item) {
                                         detectTapGestures {
                                             val sizes = when (item) {
@@ -323,9 +349,11 @@ private fun TodayGrid(
                                         }
                                     }
                                     .pointerInput(item.id) {
-                                        detectDragGestures(
+                                        detectDragGesturesAfterLongPress(
                                             onDragStart = { pos ->
-                                                val b = bounds[item.id] ?: return@detectDragGestures
+                                                val b = bounds[item.id] ?: return@detectDragGesturesAfterLongPress
+                                                state.touchingItem = true
+                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 grabOffset = pos
                                                 dragPointer = b.topLeft + pos
                                                 draggingId = item.id
@@ -342,10 +370,12 @@ private fun TodayGrid(
                                                 }
                                             },
                                             onDragEnd = {
+                                                state.touchingItem = false
                                                 draggingId = null
                                                 repository.set(order.toList())
                                             },
                                             onDragCancel = {
+                                                state.touchingItem = false
                                                 draggingId = null
                                                 repository.set(order.toList())
                                             },

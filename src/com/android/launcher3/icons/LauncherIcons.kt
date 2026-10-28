@@ -62,6 +62,15 @@ internal constructor(
         return userCache.getUserInfo(user)
     }
 
+    private var liftedShadowGenerator: ShadowGenerator? = null
+
+    // LC: a slightly stronger icon shadow, see LiftedShadowGenerator.
+    override fun getShadowGenerator(): ShadowGenerator {
+        // Still let the base class read the shadow preference.
+        super.getShadowGenerator()
+        return liftedShadowGenerator ?: LiftedShadowGenerator(mIconBitmapSize).also { liftedShadowGenerator = it }
+    }
+
     override fun getShapePath(drawable: AdaptiveIconDrawable, iconBounds: Rect): Path {
         if (!Flags.enableLauncherIconShapes()) return super.getShapePath(drawable, iconBounds)
         return themeManager.iconShape.getPath(iconBounds)

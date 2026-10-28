@@ -45,7 +45,6 @@ import android.graphics.Canvas;
 import android.graphics.Insets;
 import android.graphics.Path;
 import android.graphics.Rect;
-import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.input.InputManager;
@@ -364,9 +363,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         mFooter = findViewById(R.id.folder_footer);
         mFooterHeight = dp.folderFooterHeightPx;
         mFolderName = findViewById(R.id.folder_name);
-        if (Flags.enableLauncherVisualRefresh()) {
-            mFolderName.setTypeface(Typeface.create("google-sans-flex", Typeface.NORMAL));
-        }
+        // LC: the layout sets the name's font and weight. Setting a regular one here raced with
+        // that, so some folders showed a bold name and others a regular one.
         mMinHeaderHeight = getResources().getDimensionPixelSize(R.dimen.folder_header_min_height);
         mMaxHeaderHeight = getResources().getDimensionPixelSize(R.dimen.folder_header_max_height);
         mHeaderHeight = mMinHeaderHeight;

@@ -30,6 +30,7 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
@@ -92,8 +93,12 @@ public class PreviewBackground extends DelegatedCellDrawing {
     float mScale = 1f;
     private int mBgColor;
     private int mStrokeColor;
-    // Lawnchair: faint static border around the background.
+    // Lawnchair: faint border around the background, lit from the top, and a faint sheen at the
+    // top of the fill. The shaders span 0..1 and are scaled onto the background when drawn.
     private int mBorderColor;
+    private Shader mBorderShader;
+    private Shader mSheenShader;
+    private final Matrix mGlassMatrix = new Matrix();
     private int mDotColor;
     private float mStrokeWidth;
     private int mStrokeAlpha = MAX_BG_OPACITY;
@@ -201,6 +206,11 @@ public class PreviewBackground extends DelegatedCellDrawing {
         mStrokeColor = ColorTokens.FolderIconBorderColor.resolveColor(context);
         mBgColor = LawnchairUtilsKt.resolveFolderPreviewColor(context);
         mBorderColor = LawnchairUtilsKt.resolveFolderPreviewBorderColor(context);
+        mBorderShader = new LinearGradient(0, 0, 0, 1, mBorderColor,
+                LawnchairUtilsKt.resolveFolderPreviewBorderBottomColor(context), Shader.TileMode.CLAMP);
+        mSheenShader = new LinearGradient(0, 0, 0, 0.6f,
+                LawnchairUtilsKt.resolveFolderPreviewSheenColor(context), Color.TRANSPARENT,
+                Shader.TileMode.CLAMP);
         ta.recycle();
 
         DeviceProfile grid = activity.getDeviceProfile();
@@ -296,14 +306,25 @@ public class PreviewBackground extends DelegatedCellDrawing {
 
         getShape().drawShape(canvas, getOffsetX(), getOffsetY(), getScaledRadius(), mPaint);
 
-        if (Color.alpha(mBorderColor) > 0) {
+        if (Color.alpha(mBorderColor) > 0 && mBorderShader != null) {
+            float radius = getScaledRadius();
+            mGlassMatrix.setScale(1, radius * 2);
+            mGlassMatrix.postTranslate(0, getOffsetY());
+            mPaint.setColor(Color.BLACK);
+
+            mSheenShader.setLocalMatrix(mGlassMatrix);
+            mPaint.setShader(mSheenShader);
+            getShape().drawShape(canvas, getOffsetX(), getOffsetY(), radius, mPaint);
+
+            mBorderShader.setLocalMatrix(mGlassMatrix);
+            mPaint.setShader(mBorderShader);
             mPaint.setStyle(Paint.Style.STROKE);
             mPaint.setStrokeWidth(mStrokeWidth);
-            mPaint.setColor(mBorderColor);
             float inset = mStrokeWidth / 2;
             getShape().drawShape(canvas, getOffsetX() + inset, getOffsetY() + inset,
-                    getScaledRadius() - inset, mPaint);
+                    radius - inset, mPaint);
             mPaint.setStyle(Paint.Style.FILL);
+            mPaint.setShader(null);
         }
         drawShadow(canvas);
     }

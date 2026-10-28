@@ -2,7 +2,7 @@ package app.lawnchair.today
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -20,10 +20,10 @@ import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.Density
-import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.lifecycleScope
 import app.lawnchair.LawnchairLauncher
 import app.lawnchair.smartspace.model.SmartspaceAction
+import app.lawnchair.ui.theme.Glass
 import app.lawnchair.ui.theme.LawnchairTheme
 import app.lawnchair.util.ProvideLifecycleState
 import com.android.launcher3.InsettableFrameLayout
@@ -62,11 +62,15 @@ class TodayView(
 
     /**
      * Dims the blurred wallpaper. It sits behind the page and stays put while the page slides, so
-     * it only fades in, like the blur, instead of sliding in with a hard edge.
+     * it only fades in, like the blur, instead of sliding in with a hard edge. It's darker at the
+     * top, so the white date header stays readable on a light wallpaper.
      */
     val scrim = android.view.View(launcher).apply {
         layoutParams = InsettableFrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { ignoreInsets = true }
-        setBackgroundColor(ColorUtils.setAlphaComponent(Color.BLACK, if (isDark) 70 else 40))
+        background = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Glass.scrimTop(isDark), Glass.scrim(isDark), Glass.scrim(isDark)),
+        )
         alpha = 0f
         visibility = GONE
     }

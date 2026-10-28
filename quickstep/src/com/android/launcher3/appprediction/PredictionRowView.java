@@ -20,8 +20,9 @@ import static android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Shader;
 import android.os.Build;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
@@ -32,9 +33,9 @@ import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.graphics.ColorUtils;
 
 import app.lawnchair.preferences2.PreferenceManager2;
+import app.lawnchair.ui.theme.Glass;
 import com.android.launcher3.BubbleTextView;
 import com.android.launcher3.DeviceProfile;
 import com.android.launcher3.DeviceProfile.OnDeviceProfileChangeListener;
@@ -81,6 +82,10 @@ public class PredictionRowView<T extends Context & ActivityContext>
     private boolean mPredictionUiUpdatePaused = false;
 
     private final Paint mCardPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Shader mCardFillShader;
+    private Shader mCardBorderShader;
+    private int mCardShaderHeight;
+    private boolean mCardShaderDark;
     private final int[] mTmpLocation = new int[2];
     private final PreferenceManager2 prefs2 = PreferenceManager2.getInstance(getContext());
 
@@ -161,11 +166,32 @@ public class PredictionRowView<T extends Context & ActivityContext>
                 left = searchLeft - mTmpLocation[0];
                 right = searchRight - mTmpLocation[0];
             }
+            // The same glass card as the Today page and the finder: lighter at the top, with a
+            // hairline that catches the light along the top edge.
             float radius = getResources().getDimension(R.dimen.all_apps_prediction_card_radius);
-            mCardPaint.setColor(Utilities.isDarkTheme(getContext())
-                    ? ColorUtils.setAlphaComponent(Color.WHITE, 0x1C)
-                    : ColorUtils.setAlphaComponent(Color.WHITE, 0x8C));
+            boolean dark = Utilities.isDarkTheme(getContext());
+            if (mCardFillShader == null || mCardShaderHeight != getHeight()
+                    || mCardShaderDark != dark) {
+                mCardShaderHeight = getHeight();
+                mCardShaderDark = dark;
+                mCardFillShader = new LinearGradient(0, 0, 0, getHeight(),
+                        Glass.INSTANCE.cardTop(dark), Glass.INSTANCE.cardBottom(dark),
+                        Shader.TileMode.CLAMP);
+                mCardBorderShader = new LinearGradient(0, 0, 0, getHeight(),
+                        Glass.INSTANCE.borderTop(dark), Glass.INSTANCE.borderBottom(dark),
+                        Shader.TileMode.CLAMP);
+            }
+            mCardPaint.setStyle(Paint.Style.FILL);
+            mCardPaint.setShader(mCardFillShader);
             canvas.drawRoundRect(left, 0, right, getHeight(), radius, radius, mCardPaint);
+            float stroke = getResources().getDisplayMetrics().density * 0.75f;
+            mCardPaint.setStyle(Paint.Style.STROKE);
+            mCardPaint.setStrokeWidth(stroke);
+            mCardPaint.setShader(mCardBorderShader);
+            float inset = stroke / 2;
+            canvas.drawRoundRect(left + inset, inset, right - inset, getHeight() - inset,
+                    radius - inset, radius - inset, mCardPaint);
+            mCardPaint.setShader(null);
         }
         mFocusHelper.draw(canvas);
         super.dispatchDraw(canvas);
@@ -291,6 +317,11 @@ public class PredictionRowView<T extends Context & ActivityContext>
                 predictedItem.cellX = i;
                 predictedItem.cellY = 0;
                 icon.applyFromWorkspaceItem(predictedItem);
+                if (!Utilities.isDarkTheme(getContext())) {
+                    // Lawnchair: these labels sit on the light glass card, not on the dark tint
+                    // like the rest of the drawer's.
+                    icon.setTextColor(Glass.CARD_TEXT_LIGHT);
+                }
             } else {
                 icon.setVisibility(predictionCount == 0 ? GONE : INVISIBLE);
             }

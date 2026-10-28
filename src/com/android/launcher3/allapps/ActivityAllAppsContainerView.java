@@ -37,6 +37,8 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -44,6 +46,7 @@ import android.graphics.Path.Direction;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.os.Bundle;
 import android.os.Parcelable;
 import android.os.Process;
@@ -165,7 +168,11 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     // Used to animate Search results out and A-Z apps in, or vice-versa.
     private final SearchTransitionController mSearchTransitionController;
     private final Paint mHeaderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private Paint mSheetBorderPaint;
+    // Lawnchair: the soft top edge of the tint behind the apps over blur, see drawGlassPanel.
+    private static final int GLASS_PANEL_FADE_DP = 48;
+    private LinearGradient mGlassEdgeShader;
+    private int mGlassEdgeColor;
+    private final Matrix mGlassEdgeMatrix = new Matrix();
     private final Rect mInsets = new Rect();
     private final AllAppsStore<T> mAllAppsStore;
     private final RecyclerView.OnScrollListener mScrollListener =
@@ -1238,6 +1245,12 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     protected void updateBackgroundVisibility(DeviceProfile deviceProfile) {
         mBottomSheetBackground.setVisibility(
                 deviceProfile.shouldShowAllAppsOnSheet() ? View.VISIBLE : View.GONE);
+        // Lawnchair: over blur there's no sheet, so no sheet handle either. Its area still takes
+        // the drag down to close.
+        if (mBottomSheetHandle != null) {
+            mBottomSheetHandle.setVisibility(
+                    isBackgroundBlurEnabled() ? View.INVISIBLE : View.VISIBLE);
+        }
         // Note: The opaque sheet background and header protection are added in drawOnScrim.
         // For the taskbar entrypoint, the scrim is drawn by its abstract slide in view container,
         // so its header protection is derived from this scrim instead.
@@ -1643,19 +1656,27 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         mScrimView = scrimView;
     }
 
-    private void drawSheetBorder(Canvas canvas) {
-        if (mSheetBorderPaint == null) {
-            mSheetBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            mSheetBorderPaint.setStyle(Paint.Style.STROKE);
-            mSheetBorderPaint.setStrokeWidth(getResources().getDisplayMetrics().density);
+    /** Lawnchair: the tint behind the apps over blur, with a soft edge above [top]. */
+    private void drawGlassPanel(Canvas canvas, float left, float right, float top, float bottom,
+            int color) {
+        float fade = getResources().getDisplayMetrics().density * GLASS_PANEL_FADE_DP;
+        if (mGlassEdgeShader == null || mGlassEdgeColor != color) {
+            mGlassEdgeColor = color;
+            mGlassEdgeShader = new LinearGradient(0, 0, 0, 1,
+                    ColorUtils.setAlphaComponent(color, 0), color, Shader.TileMode.CLAMP);
         }
-        mSheetBorderPaint.setColor(LawnchairUtilsKt.getAllAppsGlassBorderColor(getContext()));
-        mSheetBorderPaint.setAlpha((int) (Color.alpha(mSheetBorderPaint.getColor()) * getAlpha()));
-        float inset = mSheetBorderPaint.getStrokeWidth() / 2;
-        mTmpRectF.inset(inset, inset);
-        mTmpPath.reset();
-        mTmpPath.addRoundRect(mTmpRectF, mBottomSheetCornerRadii, Direction.CW);
-        canvas.drawPath(mTmpPath, mSheetBorderPaint);
+        mGlassEdgeMatrix.setScale(1, fade);
+        mGlassEdgeMatrix.postTranslate(0, top - fade);
+        mGlassEdgeShader.setLocalMatrix(mGlassEdgeMatrix);
+
+        int alpha = (int) (getAlpha() * 255);
+        mHeaderPaint.setShader(mGlassEdgeShader);
+        mHeaderPaint.setAlpha(alpha);
+        canvas.drawRect(left, top - fade, right, top, mHeaderPaint);
+        mHeaderPaint.setShader(null);
+        mHeaderPaint.setColor(color);
+        mHeaderPaint.setAlpha((int) (Color.alpha(color) * getAlpha()));
+        canvas.drawRect(left, top, right, bottom, mHeaderPaint);
     }
 
     @Override
@@ -1679,6 +1700,14 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         // Draw full background panel if presenting on a sheet.
         int bottomSheetBackgroundColor = getBottomSheetBackgroundColor();
         float bottomSheetBackgroundAlpha = Color.alpha(bottomSheetBackgroundColor) / 255.0f;
+        if (hasBottomSheet && isBackgroundBlurEnabled()) {
+            // Lawnchair: no sheet over blur. The apps sit on the blurred wallpaper under a tint
+            // that covers the whole screen once open, like the Today page and the finder. While it
+            // slides in, its top edge is soft instead of a rounded sheet edge.
+            drawGlassPanel(canvas, leftWithScale, rightWithScale,
+                    topWithScale - panel.getTop(), bottomWithOffset, bottomSheetBackgroundColor);
+            return;
+        }
         if (hasBottomSheet) {
             mHeaderPaint.setColor(bottomSheetBackgroundColor);
             mHeaderPaint.setAlpha((int) (bottomSheetBackgroundAlpha * 255));
@@ -1691,10 +1720,6 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
             mTmpPath.reset();
             mTmpPath.addRoundRect(mTmpRectF, mBottomSheetCornerRadii, Direction.CW);
             canvas.drawPath(mTmpPath, mHeaderPaint);
-            if (isBackgroundBlurEnabled()) {
-                // Lawnchair: a faint glass border, like the folder previews and dock.
-                drawSheetBorder(canvas);
-            }
 
             // When the background panel is blurred (or fallback), we don't add header protection.
             // TODO (b/414671116): Apply header protection whenever search bar is focused.

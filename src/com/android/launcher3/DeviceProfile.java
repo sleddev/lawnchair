@@ -39,6 +39,7 @@ import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
+import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.PointF;
 import android.graphics.Rect;
@@ -752,6 +753,13 @@ public class DeviceProfile {
                 .firstCached(preferenceManager2.getNotificationDotTextColor());
         int countColor = counterColorOption.getColorPreferenceEntry().getLightColor().invoke(context);
 
+        // LC: by default, counts get a strong red badge with white numbers, One UI style. The
+        // theme's pale accent dot is easy to miss once it holds a number.
+        if (showNotificationCount && dotColor == 0) {
+            dotColor = DEFAULT_COUNT_BADGE_COLOR;
+            if (countColor == 0) countColor = Color.WHITE;
+        }
+
         // This is done last, after iconSizePx is calculated above.
         mDotRendererWorkSpace = createDotRenderer(themeManager, iconSizePx, dotRendererCache, showNotificationCount, typeface, dotColor, countColor);
         mDotRendererAllApps = createDotRenderer(themeManager,
@@ -792,6 +800,8 @@ public class DeviceProfile {
         return (isScalableGrid && inv.inlineQsb[mTypeIndex] && canQsbInline)
                 || inv.isFixedLandscape;
     }
+
+    private static final int DEFAULT_COUNT_BADGE_COLOR = 0xFFF0483C;
 
     private static DotRenderer createDotRenderer(
             @NonNull ThemeManager themeManager, int size, @NonNull SparseArray<DotRenderer> cache) {
