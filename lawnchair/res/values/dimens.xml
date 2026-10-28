@@ -149,13 +149,25 @@
     <dimen name="folder_panel_corner_radius">36dp</dimen>
     <dimen name="folder_cell_extra_height">16dp</dimen>
 
+    <!-- iOS style workspace grid: wider side padding, so the columns are spaced like iOS -->
+    <dimen name="workspace_side_margin">16dp</dimen>
+    <!-- Rows are at most this many visible icon sizes apart (iOS 26: ~101pt around 64pt icons);
+         the rest of a tall screen goes above the grid and above the dock. -->
+    <item name="workspace_max_row_height_ratio" format="float" type="dimen">1.58</item>
+
     <!-- iOS style glass dock -->
-    <dimen name="dock_glass_margin_horizontal">12dp</dimen>
-    <dimen name="dock_glass_padding_vertical">18dp</dimen>
-    <dimen name="dock_glass_corner_radius">36dp</dimen>
+    <!-- The dock's sides line up with the workspace grid's side padding (this is the minimum).
+         Below the dock, the margin is at least the navigation bar inset, so the gesture pill
+         sits centered in the gap under the dock. -->
+    <dimen name="dock_glass_min_margin">8dp</dimen>
+    <!-- Space between the dock edges and the visible icon edges, on all four sides, relative to
+         the icon size (iOS 26: ~20pt around 64pt icons). The corner radius follows from it,
+         concentric with the icon shape. -->
+    <item name="dock_glass_padding_ratio" format="float" type="dimen">0.31</item>
     <!-- Same as the max depth blur behind an open folder (max_depth_blur_radius_enhanced). -->
     <dimen name="dock_glass_blur_radius">30dp</dimen>
     <dimen name="dock_glass_border_width">1dp</dimen>
-    <!-- Space between the dock and the (24dp tall, centered) page indicator above it -->
-    <dimen name="dock_glass_page_indicator_gap">12dp</dimen>
+    <!-- The workspace page indicator is centered between the grid and the dock, at least this
+         far above the dock -->
+    <dimen name="dock_glass_page_indicator_gap">4dp</dimen>
 </resources>

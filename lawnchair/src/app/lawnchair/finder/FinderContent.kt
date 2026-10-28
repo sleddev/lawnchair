@@ -42,6 +42,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -271,15 +272,19 @@ private fun SearchField(
                 )
             }
         }
-        Text(
-            text = "Cancel",
-            color = colors.pageText,
-            fontSize = 17.sp,
-            style = TextStyle(shadow = colors.pageShadow),
+        // Like iOS 26's search: a round glass close button, as tall as the field, next to it.
+        Spacer(Modifier.width(10.dp))
+        Box(
             modifier = Modifier
-                .glassClickable(Color.Transparent, RoundedCornerShape(8.dp), pressedScale = Motion.CONTROL_PRESSED_SCALE, onClick = onCancel)
-                .padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-        )
+                .size(Glass.FieldHeight)
+                // First, so the press scale applies to the whole button.
+                .glassClickable(colors.highlight, CircleShape, pressedScale = Motion.CONTROL_PRESSED_SCALE, onClick = onCancel)
+                .background(colors.field, CircleShape)
+                .border(0.75.dp, colors.border, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Close, contentDescription = "Cancel", tint = colors.text, modifier = Modifier.size(22.dp))
+        }
     }
 }
 

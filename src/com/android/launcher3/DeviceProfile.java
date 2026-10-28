@@ -674,6 +674,12 @@ public class DeviceProfile {
         desiredWorkspaceHorizontalMarginPx =
                 Math.round(desiredWorkspaceHorizontalMarginPx * workspacePaddingHorizontalFactor);
         desiredWorkspaceHorizontalMarginOriginalPx = desiredWorkspaceHorizontalMarginPx;
+        // Lawnchair: the drawer padding is derived from the stock workspace margin, not the
+        // wider iOS style one (see workspace_side_margin).
+        mAllAppsReferenceMarginPx = mIsResponsiveGrid || mIsScalableGrid
+                ? desiredWorkspaceHorizontalMarginPx
+                : Math.round(res.getDimensionPixelSize(R.dimen.dynamic_grid_left_right_margin)
+                        * workspacePaddingHorizontalFactor);
 
         splitPlaceholderInset = res.getDimensionPixelSize(R.dimen.split_placeholder_inset);
         // We need to use the full window bounds for split determination because on near-square
@@ -695,6 +701,7 @@ public class DeviceProfile {
 
         calculateAndSetWorkspaceVerticalPadding(context, inv, extraSpace);
 
+        mMaxRowHeightRatio = res.getFloat(R.dimen.workspace_max_row_height_ratio);
         int cellLayoutPadding =
                 mDeviceProperties.isTwoPanels() ? cellLayoutBorderSpacePx.x / 2 : res.getDimensionPixelSize(
                         R.dimen.cell_layout_padding);
@@ -803,6 +810,10 @@ public class DeviceProfile {
 
     private static final int DEFAULT_COUNT_BADGE_COLOR = 0xFFF0483C;
 
+    // Lawnchair: the most the workspace rows are apart, relative to the visible icon size.
+    private float mMaxRowHeightRatio = Float.MAX_VALUE;
+    private int mAllAppsReferenceMarginPx;
+
     private static DotRenderer createDotRenderer(
             @NonNull ThemeManager themeManager, int size, @NonNull SparseArray<DotRenderer> cache) {
         DotRenderer renderer = cache.get(size);
@@ -880,7 +891,7 @@ public class DeviceProfile {
 
         return mIsScalableGrid
                 ? pxFromDp(idp.horizontalMargin[mTypeIndex], mMetrics)
-                : res.getDimensionPixelSize(R.dimen.dynamic_grid_left_right_margin);
+                : res.getDimensionPixelSize(R.dimen.workspace_side_margin);
     }
 
     private void calculateAndSetWorkspaceVerticalPadding(Context context,
@@ -1462,7 +1473,7 @@ public class DeviceProfile {
             allAppsLeftRightMargin = Math.max(1, (mDeviceProperties.getAvailableWidthPx() - usedWidth) / 2);
         } else if (!mIsResponsiveGrid) {
             allAppsPadding.left = allAppsPadding.right =
-                    Math.max(0, desiredWorkspaceHorizontalMarginPx + cellLayoutHorizontalPadding
+                    Math.max(0, mAllAppsReferenceMarginPx + cellLayoutHorizontalPadding
                             - (getAllAppsProfile().getBorderSpacePx().x / 2));
         }
         var allAppLeftRightMarginMultiplier = PreferenceCacheExtensionsKt
@@ -1806,6 +1817,21 @@ public class DeviceProfile {
             int bottomHotseatReserve = Math.min(hotseatBarSizePx, paddingBottom);
             paddingBottom = bottomHotseatReserve
                     + Math.round((paddingBottom - bottomHotseatReserve) * workspacePaddingVerticalFactor);
+
+            // Lawnchair: keep the rows compact like iOS instead of stretching them over a tall
+            // screen. Rows are at most a fixed multiple of the icon size apart, and the space
+            // left over is split between the top of the grid and the space above the dock.
+            if (!mIsResponsiveGrid && !mIsScalableGrid && !mDeviceProperties.isTablet()) {
+                int rowsHeight = mDeviceProperties.getHeightPx() - mInsets.top - mInsets.bottom
+                        - paddingTop - paddingBottom;
+                float maxRowHeight = Math.max(cellHeightPx, getIconVisibleSizePx(iconSizePx)
+                        * mMaxRowHeightRatio);
+                int extra = Math.round(rowsHeight - maxRowHeight * inv.numRows);
+                if (extra > 0) {
+                    paddingTop += extra / 2;
+                    paddingBottom += extra - extra / 2;
+                }
+            }
 
             padding.set(paddingLeft, paddingTop, paddingRight, paddingBottom);
         }

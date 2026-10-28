@@ -21,6 +21,7 @@ package com.android.launcher3;
 import static android.view.View.MeasureSpec.makeMeasureSpec;
 
 import static com.android.launcher3.LauncherAnimUtils.VIEW_TRANSLATE_X;
+import static com.android.launcher3.icons.IconNormalizer.ICON_VISIBLE_AREA_FACTOR;
 import static com.android.launcher3.util.MultiTranslateDelegate.INDEX_BUBBLE_ADJUSTMENT_ANIM;
 
 import android.animation.AnimatorSet;
@@ -29,7 +30,11 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
+import android.graphics.Path;
 import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.Region;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.InsetDrawable;
 import android.util.AttributeSet;
@@ -124,6 +129,7 @@ public class Hotseat extends FrameLayout implements Insettable {
     private GlassDockBackground mGlassDock;
     // Lawnchair: how far the hotseat is extended upwards so it contains the whole glass dock.
     private int mGlassDockOverflow;
+    private float mIconCornerFraction = Float.NaN;
 
     PreferenceManager2 preferenceManager2;
     PreferenceManager preferenceManager;
@@ -264,7 +270,11 @@ public class Hotseat extends FrameLayout implements Insettable {
 
     /**
      * Lawnchair: the glass dock wraps the icon rows, inset from the screen edges, and isn't
-     * shown for the vertical (landscape) hotseat.
+     * shown for the vertical (landscape) hotseat. Its geometry follows the iOS dock: its sides line
+     * up with the outer edges of the workspace grid, the icons are as big as on the workspace with
+     * the same padding to the dock edges on all four sides and spread evenly in between, and the
+     * corner radius is concentric with the icon shape. Below the dock, the margin
+     * is at least the navigation bar inset, so the gesture pill sits centered in the gap.
      */
     private void updateGlassDockBounds() {
         if (mGlassDock == null) {
@@ -272,49 +282,105 @@ public class Hotseat extends FrameLayout implements Insettable {
         }
         DeviceProfile dp = mActivity.getDeviceProfile();
         if (mHasVerticalHotseat || dp.isVerticalBarLayout() || mPagedView.getHeight() == 0) {
-            mGlassDock.setBounds(0, 0, 0, 0);
+            mGlassDock.setBounds(0, 0, 0, 0, 0);
             return;
         }
-        float pagerTop = mIconsContainer.getTop() + mPagedView.getTop();
-        float margin = getResources().getDimension(R.dimen.dock_glass_margin_horizontal);
-        mGlassDock.setBounds(margin, getGlassDockTop(pagerTop, mPagedView.getHeight()),
-                getWidth() - margin, getGlassDockBottom(pagerTop, mPagedView.getHeight()));
+        float margin = getGlassDockMargin(dp);
+        float bottom = getHeight() - getGlassDockBottomGap(dp);
+        float top = bottom - getGlassDockHeight(dp);
+        mGlassDock.setBounds(dp.getInsets().left + margin, top,
+                getWidth() - dp.getInsets().right - margin, bottom, getGlassDockCornerRadius(dp));
     }
 
-    /** Height of the icon pager in a hotseat bar with the given layout padding. */
-    private float getGlassDockPagerHeight(DeviceProfile dp, Rect padding) {
-        return dp.hotseatBarSizePx - padding.top - padding.bottom
-                - (mPagedView.isPagingEnabled() ? mPageIndicatorHeight : 0);
+    /** Size of the visible part of the dock icons (without the icon's built-in margins). */
+    private static float getGlassDockIconSize(DeviceProfile dp) {
+        return Math.round(ICON_VISIBLE_AREA_FACTOR * dp.iconSizePx);
     }
 
-    private float getGlassDockTop(float pagerTop, float pagerHeight) {
-        DeviceProfile dp = mActivity.getDeviceProfile();
-        float cellHeight = pagerHeight / Math.max(1, dp.numHotseatRows);
-        return pagerTop + cellHeight / 2 - dp.iconSizePx / 2f
-                - getResources().getDimension(R.dimen.dock_glass_padding_vertical);
+    /** Space between the dock sides and the screen edges: the workspace grid's side padding. */
+    private float getGlassDockMargin(DeviceProfile dp) {
+        return Math.max(getResources().getDimension(R.dimen.dock_glass_min_margin),
+                dp.workspacePadding.left + dp.cellLayoutPaddingPx.left);
     }
 
-    private float getGlassDockBottom(float pagerTop, float pagerHeight) {
-        DeviceProfile dp = mActivity.getDeviceProfile();
-        float cellHeight = pagerHeight / Math.max(1, dp.numHotseatRows);
-        return pagerTop + pagerHeight - cellHeight / 2 + dp.iconSizePx / 2f
-                + getResources().getDimension(R.dimen.dock_glass_padding_vertical);
+    /** Space between the visible icon edges and the dock edges, on all four sides. */
+    private float getGlassDockPadding(DeviceProfile dp) {
+        return getResources().getFloat(R.dimen.dock_glass_padding_ratio)
+                * getGlassDockIconSize(dp);
+    }
+
+    private float getGlassDockHeight(DeviceProfile dp) {
+        float padding = getGlassDockPadding(dp);
+        int rows = Math.max(1, dp.numHotseatRows);
+        return 2 * padding + getGlassDockIconSize(dp) + (rows - 1) * dp.hotseatCellHeightPx;
+    }
+
+    /** Space between the bottom of the dock and the bottom of the screen. */
+    private float getGlassDockBottomGap(DeviceProfile dp) {
+        return Math.max(getGlassDockMargin(dp), dp.getInsets().bottom);
+    }
+
+    private float getGlassDockCornerRadius(DeviceProfile dp) {
+        if (Float.isNaN(mIconCornerFraction)) {
+            mIconCornerFraction = measureIconCornerFraction();
+        }
+        float iconRadius = mIconCornerFraction * getGlassDockIconSize(dp) / 2;
+        float radius = getGlassDockPadding(dp) + iconRadius;
+        return Math.min(radius, getGlassDockHeight(dp) / 2);
     }
 
     /**
-     * Lawnchair: bottom margin that places the workspace page indicator just above the glass
-     * dock, or -1 if there's no glass dock. Computed from the device profile, since it's used
-     * before the hotseat is laid out.
+     * Corner radius of the icon shape, as a fraction of half the icon size. It's measured on the
+     * mask path, as the radius of the circular corner that reaches as far along the diagonal.
+     */
+    private float measureIconCornerFraction() {
+        final int size = 200;
+        Path path = new Path(PreferenceCacheExtensionsKt.firstCached(
+                preferenceManager2.getIconShape()).getMaskPath());
+        RectF bounds = new RectF();
+        path.computeBounds(bounds, true);
+        if (bounds.isEmpty()) {
+            return 0f;
+        }
+        Matrix matrix = new Matrix();
+        matrix.setRectToRect(bounds, new RectF(0, 0, size, size), Matrix.ScaleToFit.FILL);
+        path.transform(matrix);
+        Region region = new Region();
+        region.setPath(path, new Region(0, 0, size, size));
+        int inset = 0;
+        while (inset < size / 2 && !region.contains(inset, inset)) {
+            inset++;
+        }
+        float radius = inset / (1f - (float) Math.sqrt(0.5));
+        return Math.min(1f, radius / (size / 2f));
+    }
+
+    /** Space below the icon pager, reserved for its page indicator. */
+    private int getIndicatorSpace(DeviceProfile dp) {
+        if (dp.isVerticalBarLayout()) {
+            return 0;
+        }
+        // The glass dock always reserves it (inside its bottom padding), so the icons don't
+        // move when paging turns on or off.
+        return mPagedView.isPagingEnabled() || mGlassDock != null ? mPageIndicatorHeight : 0;
+    }
+
+    /**
+     * Lawnchair: bottom margin that centers the workspace page indicator between the bottom of
+     * the grid and the glass dock (where iOS has its Search button), or -1 if there's no glass
+     * dock. Computed from the device profile, since it's used before the hotseat is laid out.
      */
     public int getPageIndicatorBottomMargin() {
         DeviceProfile dp = mActivity.getDeviceProfile();
         if (mGlassDock == null || dp.isVerticalBarLayout()) {
             return -1;
         }
-        Rect padding = dp.getHotseatLayoutPadding(getContext());
-        float dockTop = getGlassDockTop(padding.top, getGlassDockPagerHeight(dp, padding));
-        return Math.round(dp.hotseatBarSizePx - dockTop + getResources().getDimension(
-                R.dimen.dock_glass_page_indicator_gap));
+        float dockTop = getGlassDockBottomGap(dp) + getGlassDockHeight(dp);
+        float gridBottom = dp.getInsets().bottom + dp.workspacePadding.bottom
+                + dp.cellLayoutPaddingPx.bottom;
+        float minGap = getResources().getDimension(R.dimen.dock_glass_page_indicator_gap);
+        return Math.round(Math.max(dockTop + minGap,
+                (dockTop + gridBottom - dp.workspacePageIndicatorHeight) / 2));
     }
 
     /** Provides translation X for hotseat icons for the channel. */
@@ -514,22 +580,35 @@ public class Hotseat extends FrameLayout implements Insettable {
 
         Rect padding = grid.getHotseatLayoutPadding(getContext());
         if (mGlassDock != null && !grid.isVerticalBarLayout()) {
-            // Lawnchair: space the icons evenly inside the glass dock, with the same gap between
-            // the dock edges and the icons as between the icons themselves.
+            // Lawnchair: lay the icons out inside the glass dock, with the outer icons at the
+            // dock padding from its edges and the rest spread evenly in between. Cells are
+            // equally wide with the icons centered in them, so the outer icon edge is at
+            // sidePadding + cellWidth / 2 - iconSize / 2, with
+            // cellWidth = (width - 2 * sidePadding) / columns.
+            float iconSize = getGlassDockIconSize(grid);
             int columns = Math.max(1, grid.numShownHotseatIcons);
-            float dockWidth = grid.getDeviceProperties().getAvailableWidthPx()
-                    - 2 * getResources().getDimension(R.dimen.dock_glass_margin_horizontal);
-            float gap = Math.max(0, (dockWidth - columns * grid.iconSizePx) / (columns + 1));
-            int sidePadding = Math.round(
-                    getResources().getDimension(R.dimen.dock_glass_margin_horizontal) + gap / 2);
+            float width = grid.getDeviceProperties().getAvailableWidthPx()
+                    - insets.left - insets.right;
+            float iconEdge = getGlassDockMargin(grid) + getGlassDockPadding(grid) + iconSize / 2;
+            int sidePadding = columns == 1 ? 0 : Math.max(0, Math.round(
+                    (iconEdge - width / (2 * columns)) * columns / (columns - 1)));
             padding.left = sidePadding + insets.left;
             padding.right = sidePadding + insets.right;
 
-            // The glass dock reaches above the hotseat bar. Extend the view upwards so the dock
+            // Vertically, the pager is exactly as tall as the icon rows and centered in the
+            // dock. Its page indicator goes below it, inside the dock's bottom padding.
+            int rows = Math.max(1, grid.numHotseatRows);
+            int pagerHeight = rows * grid.hotseatCellHeightPx;
+            float dockCenter = getGlassDockBottomGap(grid) + getGlassDockHeight(grid) / 2;
+            padding.bottom = Math.round(dockCenter - pagerHeight / 2f - getIndicatorSpace(grid));
+            padding.top = lp.height - padding.bottom - getIndicatorSpace(grid) - pagerHeight;
+
+            // If the dock reaches above the hotseat bar, extend the view upwards so the dock
             // stays inside its bounds: a RenderEffect (like the folder blur) renders the view
             // into a layer clipped to them, which cut off the top of the dock.
-            mGlassDockOverflow = Math.max(0, (int) Math.ceil(-getGlassDockTop(padding.top,
-                    getGlassDockPagerHeight(grid, padding))));
+            mGlassDockOverflow = Math.max(0, (int) Math.ceil(getGlassDockBottomGap(grid)
+                    + getGlassDockHeight(grid) - lp.height));
+            mGlassDockOverflow = Math.max(mGlassDockOverflow, -padding.top);
             lp.height += mGlassDockOverflow;
             padding.top += mGlassDockOverflow;
         } else {
@@ -628,7 +707,7 @@ public class Hotseat extends FrameLayout implements Insettable {
 
         DeviceProfile dp = mActivity.getDeviceProfile();
         boolean showIndicator = mPagedView.isPagingEnabled() && !dp.isVerticalBarLayout();
-        int indicatorSpace = showIndicator ? mPageIndicatorHeight : 0;
+        int indicatorSpace = getIndicatorSpace(dp);
 
         int pagerWidth = widthSize - paddingLeft - paddingRight;
         int pagerHeight = heightSize - paddingTop - paddingBottom;
@@ -674,7 +753,7 @@ public class Hotseat extends FrameLayout implements Insettable {
         int containerWidth = mIconsContainer.getWidth();
         int containerHeight = mIconsContainer.getHeight();
         boolean showIndicator = mPagedView.isPagingEnabled() && !dp.isVerticalBarLayout();
-        int indicatorSpace = showIndicator ? mPageIndicatorHeight : 0;
+        int indicatorSpace = getIndicatorSpace(dp);
 
         mPagedView.layout(0, 0, containerWidth, Math.max(0, containerHeight - indicatorSpace));
 

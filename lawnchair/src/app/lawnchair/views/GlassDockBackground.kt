@@ -31,7 +31,7 @@ class GlassDockBackground(private val view: View) {
     private val context: Context = view.context
     private val res = context.resources
 
-    private val cornerRadius = res.getDimension(R.dimen.dock_glass_corner_radius)
+    private var cornerRadius = 0f
     private val blurRadius = res.getDimensionPixelSize(R.dimen.dock_glass_blur_radius)
     private val borderWidth = res.getDimension(R.dimen.dock_glass_border_width)
 
@@ -94,8 +94,10 @@ class GlassDockBackground(private val view: View) {
         blurDrawable = null
     }
 
-    /** Sets the dock bounds, relative to [view]. */
-    fun setBounds(left: Float, top: Float, right: Float, bottom: Float) {
+    /** Sets the dock bounds, relative to [view], and its corner radius. */
+    fun setBounds(left: Float, top: Float, right: Float, bottom: Float, radius: Float) {
+        cornerRadius = radius
+        blurDrawable?.setCornerRadius(radius)
         updateBounds(RectF(left, top, right, bottom))
     }
 
