@@ -2,11 +2,16 @@ package app.lawnchair.finder
 
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,9 +82,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.lawnchair.ui.theme.Glass
+import app.lawnchair.ui.theme.Motion
+import app.lawnchair.ui.theme.glassClickable
+import app.lawnchair.ui.theme.staggeredEntrance
 import com.android.launcher3.BaseActivity
 import com.android.launcher3.model.data.AppInfo
 import com.android.launcher3.views.ActivityContext
@@ -182,9 +191,12 @@ internal fun FinderContent(
             ) {
                 if (query.isBlank()) {
                     if (suggestions.isNotEmpty()) {
-                        header("App Suggestions", colors)
+                        // Rises in a beat after the search field as the finder opens.
+                        header("App Suggestions", colors, Modifier.staggeredEntrance(1, progress))
                         item(key = "suggestions") {
-                            Card(colors) { AppGrid(suggestions, null, colors, onOpen, onAppLongPress) }
+                            Card(colors, Modifier.animateItem().staggeredEntrance(2, progress)) {
+                                AppGrid(suggestions, null, colors, onOpen, onAppLongPress)
+                            }
                         }
                     }
                 } else {
@@ -244,15 +256,18 @@ private fun SearchField(
                         },
                 )
             }
-            if (query.isNotEmpty()) {
+            AnimatedVisibility(
+                query.isNotEmpty(),
+                enter = fadeIn() + scaleIn(Motion.pop(), initialScale = 0.4f),
+                exit = fadeOut() + scaleOut(targetScale = 0.4f),
+            ) {
                 Icon(
                     Icons.Rounded.Cancel,
                     contentDescription = "Clear",
                     tint = colors.secondary,
                     modifier = Modifier
                         .size(20.dp)
-                        .clip(CircleShape)
-                        .clickable { onQueryChange("") },
+                        .glassClickable(Color.Transparent, CircleShape, pressedScale = 0.8f) { onQueryChange("") },
                 )
             }
         }
@@ -262,14 +277,13 @@ private fun SearchField(
             fontSize = 17.sp,
             style = TextStyle(shadow = colors.pageShadow),
             modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClick = onCancel)
+                .glassClickable(Color.Transparent, RoundedCornerShape(8.dp), pressedScale = Motion.CONTROL_PRESSED_SCALE, onClick = onCancel)
                 .padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         )
     }
 }
 
-private fun LazyListScope.header(title: String, colors: FinderColors) {
+private fun LazyListScope.header(title: String, colors: FinderColors, modifier: Modifier = Modifier) {
     item(key = "header:$title") {
         // Like the Today page's labels: small capitals, straight on the scrim.
         Text(
@@ -279,7 +293,10 @@ private fun LazyListScope.header(title: String, colors: FinderColors) {
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.8.sp,
             style = TextStyle(shadow = colors.pageShadow),
-            modifier = Modifier.padding(start = 8.dp, top = 20.dp, bottom = 8.dp),
+            modifier = Modifier
+                .animateItem()
+                .then(modifier)
+                .padding(start = 8.dp, top = 20.dp, bottom = 8.dp),
         )
     }
 }
@@ -295,13 +312,13 @@ private fun LazyListScope.results(
     results.topHit?.let { hit ->
         header("Top Hit", colors)
         item(key = "top:${hit.key}") {
-            Card(colors) { TopHit(hit, colors, search, onOpen, onAppLongPress) }
+            Card(colors, Modifier.animateItem()) { TopHit(hit, colors, search, onOpen, onAppLongPress) }
         }
     }
     if (results.apps.isNotEmpty()) {
         header("Apps", colors)
         item(key = "apps") {
-            Card(colors) { AppGrid(results.apps, highlighted, colors, onOpen, onAppLongPress) }
+            Card(colors, Modifier.animateItem()) { AppGrid(results.apps, highlighted, colors, onOpen, onAppLongPress) }
         }
     }
     section("Settings", results.settings, colors) { item, first ->
@@ -361,17 +378,19 @@ private fun <T : FinderItem> LazyListScope.section(
     if (items.isEmpty()) return
     header(title, colors)
     item(key = "section:$title") {
-        Card(colors) {
+        Card(colors, Modifier.animateItem()) {
             items.forEachIndexed { index, item -> row(item, index == 0) }
         }
     }
 }
 
 @Composable
-private fun Card(colors: FinderColors, content: @Composable () -> Unit) {
+private fun Card(colors: FinderColors, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            // Grows and shrinks with its rows as the results change, rather than jumping.
+            .animateContentSize(Motion.appear(IntSize.VisibilityThreshold))
             .clip(Glass.CardShape)
             .background(colors.card)
             .border(0.75.dp, colors.border, Glass.CardShape)
@@ -478,8 +497,7 @@ private fun BigValue(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .glassClickable(colors.highlight, RoundedCornerShape(16.dp), onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -540,9 +558,13 @@ private fun ResultRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(if (highlighted) colors.highlight else Color.Transparent)
-                .combinedClickable(onLongClick = onLongClick, onClick = onClick)
+                .glassClickable(
+                    colors.highlight,
+                    RoundedCornerShape(16.dp),
+                    selected = highlighted,
+                    onLongClick = onLongClick,
+                    onClick = onClick,
+                )
                 .padding(horizontal = 10.dp, vertical = if (large) 10.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -588,9 +610,11 @@ private fun AppGrid(
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (item.key == highlighted) colors.highlight else Color.Transparent)
-                            .combinedClickable(
+                            .glassClickable(
+                                colors.highlight,
+                                RoundedCornerShape(16.dp),
+                                selected = item.key == highlighted,
+                                pressedScale = Motion.CONTROL_PRESSED_SCALE,
                                 onLongClick = { onAppLongPress(app, iconBounds.rect) },
                                 onClick = { onOpen(item) },
                             )

@@ -93,6 +93,7 @@ class TodayView(
     fun setProgress(value: Float) {
         val wasHidden = progress == 0f
         progress = value
+        state.progress.floatValue = value
         if (value > 0f && wasHidden) refresh()
         visibility = if (value > 0f) VISIBLE else GONE
         val width = width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels

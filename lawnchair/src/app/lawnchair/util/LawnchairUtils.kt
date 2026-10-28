@@ -210,7 +210,7 @@ fun resolveFolderPreviewColor(context: Context): Int {
         ColorUtils.setAlphaComponent(custom, getFolderPreviewAlpha(context))
     } else if (Utilities.isDarkTheme(context)) {
         ColorUtils.setAlphaComponent(
-            ColorTokens.FolderPreviewColor.resolveColor(context),
+            DARK_GLASS_TINT,
             (getFolderPreviewAlpha(context) * DEFAULT_FOLDER_PREVIEW_ALPHA).toInt(),
         )
     } else {
@@ -222,7 +222,10 @@ fun resolveFolderPreviewColor(context: Context): Int {
     }
 }
 
-private const val DEFAULT_FOLDER_PREVIEW_ALPHA = 0.7f
+private const val DEFAULT_FOLDER_PREVIEW_ALPHA = 0.55f
+
+/** The base of the dark theme glass panels (dock, open folder, app drawer): a lifted grey. */
+private const val DARK_GLASS_TINT = 0xFF2A2A30.toInt()
 private const val LIGHT_FOLDER_PREVIEW_ALPHA = 0.82f
 
 /**
@@ -259,7 +262,9 @@ fun resolveFolderBackgroundColor(context: Context): Int {
     return if (custom != 0) {
         custom
     } else if (Utilities.isDarkTheme(context)) {
-        ColorUtils.setAlphaComponent(android.graphics.Color.BLACK, 0x70)
+        // A lifted grey rather than black: over the blur it reads as smoked glass, and it barely
+        // darkens an already dark wallpaper.
+        ColorUtils.setAlphaComponent(DARK_GLASS_TINT, 0x5C)
     } else {
         // Opaque enough to read as light glass even over a dark wallpaper.
         ColorUtils.setAlphaComponent(android.graphics.Color.WHITE, 0xD4)
@@ -272,7 +277,7 @@ fun resolveFolderBackgroundColor(context: Context): Int {
  * theme.
  */
 @Suppress("UNUSED_PARAMETER")
-fun getAllAppsGlassColor(context: Context): Int = android.graphics.Color.BLACK
+fun getAllAppsGlassColor(context: Context): Int = 0xFF141418.toInt()
 
 /** Apply Lawnchair custom allapps colour to the provided colour */
 private fun getAllAppsBaseColor(context: Context, defaultColor: Int): Int {

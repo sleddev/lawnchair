@@ -3,6 +3,9 @@ package app.lawnchair.today
 import android.content.Intent
 import android.provider.Settings
 import android.text.format.DateFormat
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -34,6 +37,7 @@ import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -45,6 +49,8 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -69,6 +75,7 @@ import app.lawnchair.smartspace.provider.SmartspaceProvider
 import app.lawnchair.ui.preferences.PreferenceActivity
 import app.lawnchair.ui.preferences.navigation.Smartspace
 import app.lawnchair.ui.theme.Glass
+import app.lawnchair.ui.theme.Motion
 import com.android.launcher3.Utilities
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import java.util.Date
@@ -245,7 +252,7 @@ private fun BatteryCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
             when {
                 // One device: the ring with its level beside it, rather than a row of empty slots.
                 shown.size == 1 && size != TodaySize.Small -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    BatteryRing(shown[0], colors, 72.dp)
+                    BatteryRing(shown[0], colors, 72.dp, host.refreshKey)
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text("${shown[0].level}%", color = colors.text, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
@@ -265,7 +272,7 @@ private fun BatteryCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
 
                 size == TodaySize.Small && shown.size <= 1 -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     shown.firstOrNull()?.let { entry ->
-                        BatteryRing(entry, colors, 72.dp)
+                        BatteryRing(entry, colors, 72.dp, host.refreshKey)
                         Spacer(Modifier.height(8.dp))
                         Text("${entry.level}%", color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                     }
@@ -274,7 +281,7 @@ private fun BatteryCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
                 size == TodaySize.Small -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     shown.forEach { entry ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            BatteryRing(entry, colors, 44.dp)
+                            BatteryRing(entry, colors, 44.dp, host.refreshKey)
                             Spacer(Modifier.width(10.dp))
                             Text("${entry.level}%", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                         }
@@ -284,7 +291,7 @@ private fun BatteryCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
                 else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     shown.forEach { entry ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            BatteryRing(entry, colors, 58.dp)
+                            BatteryRing(entry, colors, 58.dp, host.refreshKey)
                             Spacer(Modifier.height(8.dp))
                             Text("${entry.level}%", color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                         }
@@ -316,7 +323,8 @@ private fun AllowBluetooth(host: TodayHost, colors: TodayColors) {
 }
 
 @Composable
-private fun BatteryRing(entry: BatteryEntry, colors: TodayColors, size: Dp) {
+private fun BatteryRing(entry: BatteryEntry, colors: TodayColors, size: Dp, refreshKey: Int) {
+    val reveal = rememberReveal(refreshKey)
     val color = if (entry.level <= 20 && !entry.charging) BatteryLow else BatteryGreen
     val icon = when (entry.type) {
         BatteryDeviceType.Phone -> Icons.Rounded.Smartphone
@@ -338,7 +346,7 @@ private fun BatteryRing(entry: BatteryEntry, colors: TodayColors, size: Dp) {
                     center = center,
                 ),
                 -90f,
-                360f * entry.level / 100f,
+                360f * entry.level / 100f * reveal.value,
                 false,
                 Offset(inset, inset),
                 arcSize,
@@ -578,13 +586,17 @@ private fun ScreenTimeCard(size: TodaySize, host: TodayHost, colors: TodayColors
             Text("No app use yet today", color = colors.secondary, fontSize = 13.sp)
             return@Column
         }
-        // A stacked bar of the top apps.
+        // A stacked bar of the top apps, which fills in from the left as the page opens.
+        val reveal = rememberReveal(host.refreshKey)
         Row(
             Modifier
                 .fillMaxWidth()
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(colors.track),
+                .background(colors.track)
+                .drawWithContent {
+                    clipRect(right = this.size.width * reveal.value) { this@drawWithContent.drawContent() }
+                },
         ) {
             apps.forEachIndexed { i, app ->
                 val fraction = app.millis.toFloat() / current!!.total
@@ -624,6 +636,20 @@ private fun UsageRow(app: AppUsage, colors: TodayColors, fontSize: TextUnit) {
         }
         Text(formatDuration(app.millis), color = colors.secondary, fontSize = fontSize, maxLines = 1)
     }
+}
+
+/**
+ * Goes from 0 to 1 each time [key] changes (the page opening), for things like a ring or a bar to
+ * fill in rather than just be there. Read it while drawing.
+ */
+@Composable
+private fun rememberReveal(key: Any?): Animatable<Float, AnimationVector1D> {
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(key) {
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, tween(durationMillis = 900, delayMillis = 150, easing = Motion.EaseOut))
+    }
+    return reveal
 }
 
 /** Adds a click handler without the Material ripple, iOS cards don't have one. */

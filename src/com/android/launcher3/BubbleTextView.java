@@ -117,6 +117,7 @@ import app.lawnchair.gestures.IconGestureListener;
 import app.lawnchair.preferences.PreferenceManager;
 import app.lawnchair.preferences2.PreferenceManager2;
 import app.lawnchair.util.LawnchairUtilsKt;
+import app.lawnchair.views.IconPressFeedback;
 import app.lawnchair.animation.PhysicsAnimator;
 
 /**
@@ -244,6 +245,9 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
 
     @ViewDebug.ExportedProperty(category = "launcher")
     private boolean mStayPressed;
+    // LC: whether this view animates the icon's press feedback itself, and the state it shows.
+    private boolean mSpringPressFeedback;
+    private boolean mIconPressed;
     @ViewDebug.ExportedProperty(category = "launcher")
     private boolean mIgnorePressedStateChange;
     @ViewDebug.ExportedProperty(category = "launcher")
@@ -1449,9 +1453,34 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
             applyCompoundDrawables(icon);
         }
         mIcon = icon;
+        mIconPressed = false;
+        mSpringPressFeedback = false;
         if (mIcon != null) {
             mIcon.setVisible(getWindowVisibility() == VISIBLE && isShown(), false);
             mIcon.setHoverScaleEnabledForDisplay(mDisplay != DISPLAY_TASKBAR);
+            // LC: icons sink in when pressed and spring back, see IconPressFeedback. The taskbar
+            // keeps the stock hover feedback.
+            if (mDisplay != DISPLAY_TASKBAR && mIcon.isAnimationEnabled()) {
+                mIcon.setAnimationEnabled(false);
+                mSpringPressFeedback = true;
+            }
+        }
+    }
+
+    @Override
+    protected void drawableStateChanged() {
+        super.drawableStateChanged();
+        if (!mSpringPressFeedback || mIcon == null) return;
+        boolean pressed = false;
+        for (int state : getDrawableState()) {
+            if (state == android.R.attr.state_pressed) {
+                pressed = true;
+                break;
+            }
+        }
+        if (pressed != mIconPressed) {
+            mIconPressed = pressed;
+            IconPressFeedback.animate(mIcon, pressed);
         }
     }
 
@@ -1608,6 +1637,7 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
         if (mIcon != null) {
             mIcon.resetScale();
         }
+        mIconPressed = false;
         // LC-Note: Cancel physics animator for icon swipe gesture
         PhysicsAnimator.getInstance(this).cancel();
         setTranslationX(0);

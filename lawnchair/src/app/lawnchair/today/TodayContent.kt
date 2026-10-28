@@ -4,6 +4,9 @@ import android.appwidget.AppWidgetProviderInfo
 import android.text.format.DateFormat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector2D
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -15,14 +18,14 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,12 +83,13 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -93,11 +98,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import app.lawnchair.ui.theme.Motion
+import app.lawnchair.ui.theme.pressScale
+import app.lawnchair.ui.theme.staggeredEntrance
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import java.util.Date
 import kotlinx.coroutines.flow.StateFlow
@@ -114,6 +123,9 @@ class TodayPageState(
     var touchingItem = false
 
     val addSheetOpen = mutableStateOf(false)
+
+    /** How far the page is open, from 0 to 1. The content rises in with it. */
+    val progress = mutableFloatStateOf(0f)
 }
 
 @Composable
@@ -138,20 +150,26 @@ fun TodayContent(
                 .statusBarsPadding()
                 .padding(top = 8.dp, bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp),
         ) {
+            val progress = { state.progress.floatValue }
             TopBar(editing, colors, onAdd = { addSheetOpen = true }, onDone = { editing = false })
-            DateHeader(host, colors)
+            DateHeader(host, colors, Modifier.staggeredEntrance(0, progress))
             TodayGrid(
                 items = items,
                 editing = editing,
+                progress = progress,
                 state = state,
                 host = host,
                 widgets = widgets,
                 repository = repository,
                 colors = colors,
             )
-            if (!editing) {
-                Spacer(Modifier.height(20.dp))
-                Pill("Edit", colors, Modifier.align(Alignment.CenterHorizontally)) { editing = true }
+            AnimatedVisibility(
+                !editing,
+                enter = fadeIn() + scaleIn(Motion.pop(), initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f),
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Pill("Edit", colors, Modifier.padding(top = 20.dp)) { editing = true }
             }
         }
 
@@ -208,9 +226,10 @@ private fun TopBar(editing: Boolean, colors: TodayColors, onAdd: () -> Unit, onD
             .height(44.dp)
             .padding(horizontal = TodayWidgets.GRID_MARGIN_DP.dp),
     ) {
-        AnimatedVisibility(editing, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.CenterStart)) {
+        AnimatedVisibility(editing, enter = popIn(), exit = popOut(), modifier = Modifier.align(Alignment.CenterStart)) {
             Box(
                 Modifier
+                    .pressScale(pressedScale = Motion.CONTROL_PRESSED_SCALE)
                     .size(34.dp)
                     .clip(CircleShape)
                     .background(colors.pill)
@@ -221,18 +240,22 @@ private fun TopBar(editing: Boolean, colors: TodayColors, onAdd: () -> Unit, onD
                 Icon(Icons.Rounded.Add, contentDescription = "Add widget", tint = Color.White)
             }
         }
-        AnimatedVisibility(editing, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.CenterEnd)) {
+        AnimatedVisibility(editing, enter = popIn(), exit = popOut(), modifier = Modifier.align(Alignment.CenterEnd)) {
             Pill("Done", colors, bold = true, onClick = onDone)
         }
     }
 }
 
+private fun popIn() = fadeIn() + scaleIn(Motion.pop(), initialScale = 0.6f)
+
+private fun popOut() = fadeOut() + scaleOut(targetScale = 0.8f)
+
 @Composable
-private fun DateHeader(host: TodayHost, colors: TodayColors) {
+private fun DateHeader(host: TodayHost, colors: TodayColors, modifier: Modifier = Modifier) {
     val now = remember(host.refreshKey) { Date() }
     val weekday = remember(now) { DateFormat.format("EEEE", now).toString() }
     val date = remember(now) { DateFormat.format(DateFormat.getBestDateTimePattern(java.util.Locale.getDefault(), "MMMMd"), now).toString() }
-    Column(Modifier.padding(horizontal = TodayWidgets.GRID_MARGIN_DP.dp + 4.dp, vertical = 6.dp)) {
+    Column(modifier.padding(horizontal = TodayWidgets.GRID_MARGIN_DP.dp + 4.dp, vertical = 6.dp)) {
         val shadow = Shadow(Color.Black.copy(alpha = 0.4f), Offset(0f, 1f), blurRadius = 10f)
         Text(
             weekday.uppercase(),
@@ -263,6 +286,7 @@ private fun Pill(text: String, colors: TodayColors, modifier: Modifier = Modifie
         fontSize = 15.sp,
         fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Medium,
         modifier = modifier
+            .pressScale(pressedScale = Motion.CONTROL_PRESSED_SCALE)
             .clip(RoundedCornerShape(50))
             .background(colors.pill)
             .border(0.75.dp, colors.pillBorder, RoundedCornerShape(50))
@@ -277,6 +301,7 @@ private fun Pill(text: String, colors: TodayColors, modifier: Modifier = Modifie
 private fun TodayGrid(
     items: List<TodayItem>,
     editing: Boolean,
+    progress: () -> Float,
     state: TodayPageState,
     host: TodayHost,
     widgets: TodayWidgets,
@@ -300,6 +325,7 @@ private fun TodayGrid(
     val haptics = LocalHapticFeedback.current
     var dragPointer by remember { mutableStateOf(Offset.Zero) }
     var grabOffset by remember { mutableStateOf(Offset.Zero) }
+    val scope = rememberCoroutineScope()
 
     Layout(
         modifier = Modifier.fillMaxWidth().padding(horizontal = with(density) { marginPx.toDp() }),
@@ -307,19 +333,40 @@ private fun TodayGrid(
             order.forEachIndexed { index, item ->
                 key(item.id) {
                     val dragging = draggingId == item.id
+                    // Picked up, the item lifts off the page; dropped, it settles into its slot.
+                    val lift by animateFloatAsState(if (dragging) 1f else 0f, Motion.appear(), label = "lift")
+                    val settle = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+                    val dragTranslation = {
+                        val b = bounds[item.id] ?: Rect.Zero
+                        dragPointer - grabOffset - b.topLeft
+                    }
+                    val endDrag: () -> Unit = {
+                        val from = dragTranslation()
+                        state.touchingItem = false
+                        draggingId = null
+                        repository.set(order.toList())
+                        haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                        scope.launch {
+                            settle.snapTo(from)
+                            settle.animateTo(Offset.Zero, Motion.appear(Offset.VisibilityThreshold))
+                        }
+                    }
                     Box(
                         Modifier
                             .onGloballyPositioned { bounds[item.id] = it.boundsInParent() }
                             .animatePlacement(enabled = !dragging)
-                            .zIndex(if (dragging) 1f else 0f)
+                            .animateResize(enabled = item is TodayItem.Card)
+                            .zIndex(if (dragging || settle.isRunning) 1f else 0f)
+                            .staggeredEntrance(index + 1, progress)
                             .graphicsLayer {
-                                if (dragging) {
-                                    val b = bounds[item.id] ?: Rect.Zero
-                                    translationX = dragPointer.x - grabOffset.x - b.left
-                                    translationY = dragPointer.y - grabOffset.y - b.top
-                                    scaleX = 1.04f
-                                    scaleY = 1.04f
-                                }
+                                val t = if (dragging) dragTranslation() else settle.value
+                                translationX = t.x
+                                translationY = t.y
+                                val scale = 1f + 0.05f * lift
+                                scaleX = scale
+                                scaleY = scale
+                                shadowElevation = lift * 20.dp.toPx()
+                                shape = TodayCardShape
                             }
                             .jiggle(editing && !dragging, index),
                     ) {
@@ -338,6 +385,7 @@ private fun TodayGrid(
                                             }
                                             val next = sizes[(sizes.indexOf(item.size) + 1) % sizes.size]
                                             if (next != item.size) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                                                 repository.replace(
                                                     item,
                                                     when (item) {
@@ -367,26 +415,24 @@ private fun TodayGrid(
                                                 val from = order.indexOfFirst { it.id == item.id }
                                                 if (target >= 0 && from >= 0) {
                                                     order.add(target, order.removeAt(from))
+                                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                                                 }
                                             },
-                                            onDragEnd = {
-                                                state.touchingItem = false
-                                                draggingId = null
-                                                repository.set(order.toList())
-                                            },
-                                            onDragCancel = {
-                                                state.touchingItem = false
-                                                draggingId = null
-                                                repository.set(order.toList())
-                                            },
+                                            onDragEnd = endDrag,
+                                            onDragCancel = endDrag,
                                         )
                                     },
                             )
-                            RemoveBadge(
-                                Modifier
-                                    .align(Alignment.TopStart)
-                                    .offset((-8).dp, (-8).dp),
-                            ) {
+                        }
+                        AnimatedVisibility(
+                            editing,
+                            enter = popIn(),
+                            exit = popOut(),
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .offset((-8).dp, (-8).dp),
+                        ) {
+                            RemoveBadge(Modifier) {
                                 when (item) {
                                     is TodayItem.Widget -> widgets.remove(item)
                                     is TodayItem.Card -> repository.remove(item)
@@ -471,28 +517,6 @@ private fun TodayItemView(item: TodayItem, host: TodayHost, widgets: TodayWidget
     }
 }
 
-/** Shrinks a little while pressed, without taking the touch from what's inside. */
-private fun Modifier.pressScale(enabled: Boolean): Modifier = composed {
-    val scale = remember { Animatable(1f) }
-    val scope = rememberCoroutineScope()
-    this
-        .pointerInput(enabled) {
-            if (!enabled) return@pointerInput
-            awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                scope.launch { scale.animateTo(0.97f, spring(stiffness = Spring.StiffnessMedium)) }
-                do {
-                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                } while (event.changes.any { it.pressed })
-                scope.launch { scale.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow)) }
-            }
-        }
-        .graphicsLayer {
-            scaleX = scale.value
-            scaleY = scale.value
-        }
-}
-
 @Composable
 private fun WidgetView(item: TodayItem.Widget, widgets: TodayWidgets, colors: TodayColors) {
     val view = remember(item.appWidgetId) { widgets.getView(item) }
@@ -510,8 +534,10 @@ private fun WidgetView(item: TodayItem.Widget, widgets: TodayWidgets, colors: To
         },
         modifier = Modifier
             .fillMaxSize()
-            .onGloballyPositioned {
-                with(density) { view.updateSize(it.size.width.toDp().value, it.size.height.toDp().value) }
+            // Only on a real size change: it tells the widget's app, and positions change on
+            // every frame while the grid animates.
+            .onSizeChanged {
+                with(density) { view.updateSize(it.width.toDp().value, it.height.toDp().value) }
             },
     )
 }
@@ -520,6 +546,7 @@ private fun WidgetView(item: TodayItem.Widget, widgets: TodayWidgets, colors: To
 private fun RemoveBadge(modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier
+            .pressScale(pressedScale = Motion.CONTROL_PRESSED_SCALE)
             .size(26.dp)
             .clip(CircleShape)
             .background(Color(0xFFE5E5EA))
@@ -533,7 +560,9 @@ private fun RemoveBadge(modifier: Modifier, onClick: () -> Unit) {
 
 /** The iOS edit mode wobble. Neighbouring items wobble out of step. */
 private fun Modifier.jiggle(enabled: Boolean, index: Int): Modifier = composed {
-    if (!enabled) return@composed this
+    // Eases in and out instead of starting and stopping dead.
+    val amplitude by animateFloatAsState(if (enabled) 1f else 0f, tween(220), label = "jiggleAmplitude")
+    if (amplitude == 0f) return@composed this
     val transition = rememberInfiniteTransition(label = "jiggle")
     val angle by transition.animateFloat(
         initialValue = -1f,
@@ -544,7 +573,31 @@ private fun Modifier.jiggle(enabled: Boolean, index: Int): Modifier = composed {
         ),
         label = "angle",
     )
-    graphicsLayer { rotationZ = angle * if (index % 2 == 0) 0.9f else -0.9f }
+    graphicsLayer { rotationZ = amplitude * angle * if (index % 2 == 0) 0.9f else -0.9f }
+}
+
+/**
+ * Grows or shrinks to a new size with a spring, like when a card is resized in edit mode, instead
+ * of jumping. The space it takes in the layout changes right away.
+ */
+private fun Modifier.animateResize(enabled: Boolean): Modifier = composed {
+    val scope = rememberCoroutineScope()
+    val animatable = remember { mutableStateOf<Animatable<IntSize, AnimationVector2D>?>(null) }
+    var target by remember { mutableStateOf<IntSize?>(null) }
+    layout { measurable, constraints ->
+        val size = IntSize(constraints.maxWidth, constraints.maxHeight)
+        val anim = animatable.value ?: Animatable(size, IntSize.VectorConverter).also { animatable.value = it }
+        if (target != size) {
+            val first = target == null
+            target = size
+            scope.launch {
+                if (enabled && !first) anim.animateTo(size, Motion.appear(IntSize.VisibilityThreshold)) else anim.snapTo(size)
+            }
+        }
+        val current = anim.value
+        val placeable = measurable.measure(Constraints.fixed(current.width.coerceAtLeast(0), current.height.coerceAtLeast(0)))
+        layout(size.width, size.height) { placeable.place(0, 0) }
+    }
 }
 
 /** Slides an item from its old spot to its new one when the grid reflows. */
@@ -563,7 +616,7 @@ private fun Modifier.animatePlacement(enabled: Boolean): Modifier = composed {
             } else if (anim.targetValue != position) {
                 scope.launch {
                     if (enabled) {
-                        anim.animateTo(position, spring(stiffness = Spring.StiffnessMediumLow))
+                        anim.animateTo(position, Motion.appear(IntOffset.VisibilityThreshold))
                     } else {
                         anim.snapTo(position)
                     }
@@ -600,8 +653,8 @@ private fun AddSheet(
     }
     AnimatedVisibility(
         visible,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it },
+        enter = slideInVertically(Motion.appear(IntOffset.VisibilityThreshold)) { it },
+        exit = slideOutVertically(spring(stiffness = Spring.StiffnessMedium, visibilityThreshold = IntOffset.VisibilityThreshold)) { it },
         modifier = Modifier.fillMaxSize(),
     ) {
         val sheetColor = if (colors.dark) Color(0xFF1C1C1E) else Color(0xFFF2F2F7)
@@ -690,6 +743,7 @@ private fun SheetRow(title: String, preview: android.graphics.drawable.Drawable?
     Row(
         Modifier
             .fillMaxWidth()
+            .pressScale()
             .clip(RoundedCornerShape(12.dp))
             .background(rowColor)
             .clickableNoRipple(onClick)

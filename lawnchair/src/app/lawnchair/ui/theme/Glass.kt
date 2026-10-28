@@ -23,15 +23,15 @@ object Glass {
     /** Side margin of search fields and cards on the finder and in the app drawer. */
     val ScreenMargin = 12.dp
 
-    fun cardTop(dark: Boolean) = if (dark) argb(0x2C2C30, 0.62f) else argb(0xFFFFFF, 0.88f)
-    fun cardBottom(dark: Boolean) = if (dark) argb(0x161618, 0.58f) else argb(0xFFFFFF, 0.78f)
+    fun cardTop(dark: Boolean) = if (dark) argb(0x3A3A40, 0.50f) else argb(0xFFFFFF, 0.88f)
+    fun cardBottom(dark: Boolean) = if (dark) argb(0x26262A, 0.46f) else argb(0xFFFFFF, 0.78f)
     fun borderTop(dark: Boolean) = argb(0xFFFFFF, if (dark) 0.20f else 0.65f)
     fun borderBottom(dark: Boolean) = argb(0xFFFFFF, if (dark) 0.05f else 0.18f)
     fun field(dark: Boolean) = if (dark) argb(0xFFFFFF, 0.16f) else argb(0xFFFFFF, 0.85f)
 
     /** The scrim over the blurred wallpaper, at the top and from about a third of the way down. */
-    fun scrimTop(dark: Boolean) = argb(0x000000, if (dark) 0.51f else 0.39f)
-    fun scrim(dark: Boolean) = argb(0x000000, if (dark) 0.27f else 0.16f)
+    fun scrimTop(dark: Boolean) = argb(0x000000, if (dark) 0.40f else 0.30f)
+    fun scrim(dark: Boolean) = argb(0x000000, if (dark) 0.18f else 0.10f)
 
     /** Text drawn straight on the scrim, like section headers. It's white in both themes. */
     val PageText = Color.White

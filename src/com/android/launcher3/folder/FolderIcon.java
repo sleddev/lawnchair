@@ -31,6 +31,7 @@ import static com.android.launcher3.model.data.FolderInfo.willAcceptItemType;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -83,6 +84,7 @@ import com.android.launcher3.model.data.ItemInfo;
 import com.android.launcher3.model.data.WorkspaceItemFactory;
 import com.android.launcher3.model.data.WorkspaceItemInfo;
 import com.android.launcher3.util.MultiTranslateDelegate;
+import com.android.launcher3.util.SafeCloseable;
 import com.android.launcher3.util.Thunk;
 import com.android.launcher3.views.ActivityContext;
 import com.android.launcher3.views.FloatingIconViewCompanion;
@@ -91,6 +93,8 @@ import com.android.launcher3.widget.PendingAddShortcutInfo;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
+
+import app.lawnchair.views.IconPressFeedback;
 
 /**
  * An icon that can appear on in the workspace representing an {@link Folder}.
@@ -117,6 +121,11 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
 
     PreviewBackground mBackground = new PreviewBackground(getContext());
     private boolean mBackgroundIsVisible = true;
+
+    // LC: press feedback, see setPressed.
+    private boolean mPreviewPressed;
+    private float mPressScale = 1f;
+    private ValueAnimator mPressAnimator;
 
     FolderGridOrganizer mPreviewVerifier;
     ClippedFolderIconLayoutRule mPreviewLayoutRule;
@@ -593,12 +602,55 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
     }
 
     @Override
+    public void setPressed(boolean pressed) {
+        super.setPressed(pressed);
+        // LC: the preview sinks in while pressed and springs back, like app icons do.
+        if (pressed == mPreviewPressed) return;
+        mPreviewPressed = pressed;
+        if (mPressAnimator != null) mPressAnimator.cancel();
+        mPressAnimator = IconPressFeedback.animator(mPressScale, pressed, scale -> {
+            mPressScale = scale;
+            invalidate();
+        });
+        mPressAnimator.start();
+    }
+
+    private void resetPressScale() {
+        if (mPressAnimator != null) mPressAnimator.cancel();
+        mPressAnimator = null;
+        mPreviewPressed = false;
+        mPressScale = 1f;
+        invalidate();
+    }
+
+    @NonNull
+    @Override
+    public SafeCloseable prepareDrawDragView() {
+        resetPressScale();
+        return () -> { };
+    }
+
+    @Override
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
 
         if (!mBackgroundIsVisible) return;
 
         mPreviewItemManager.recomputePreviewDrawingParams();
+
+        if (mPressScale != 1f) {
+            int save = canvas.save();
+            float half = mBackground.previewSize / 2f;
+            canvas.scale(mPressScale, mPressScale,
+                    mBackground.basePreviewOffsetX + half, mBackground.basePreviewOffsetY + half);
+            drawPreview(canvas);
+            canvas.restoreToCount(save);
+        } else {
+            drawPreview(canvas);
+        }
+    }
+
+    private void drawPreview(Canvas canvas) {
 
         if (!mBackground.drawingDelegated()) {
             mBackground.drawBackground(canvas);
