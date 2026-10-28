@@ -48,6 +48,12 @@
     <dimen name="qsb_widget_vertical_padding">6dp</dimen>
 
     <!-- search -->
+    <!-- A slimmer fast scroll thumb, inset from the screen edge now that the drawer is full
+         bleed: end margin = -(fastscroll_width - track_min_width) / 2 + 5dp inset. -->
+    <dimen name="fastscroll_track_min_width">4dp</dimen>
+    <dimen name="fastscroll_track_max_width">6dp</dimen>
+    <dimen name="fastscroll_end_margin">-22dp</dimen>
+
     <dimen name="search_box_container_height">60dp</dimen>
     <dimen name="search_box_height">48dp</dimen>
     <dimen name="all_apps_prediction_card_inset">4dp</dimen>

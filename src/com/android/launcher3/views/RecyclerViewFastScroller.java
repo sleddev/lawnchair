@@ -102,6 +102,8 @@ public class RecyclerViewFastScroller extends View {
             };
 
     private final static int MAX_TRACK_ALPHA = 30;
+    private static final int THUMB_COLOR = 0x73FFFFFF;
+    private static final int THUMB_COLOR_ACTIVE = 0xE6FFFFFF;
     private final static int SCROLL_BAR_VIS_DURATION = 150;
 
     private static final List<Rect> SYSTEM_GESTURE_EXCLUSION_RECT =
@@ -209,8 +211,11 @@ public class RecyclerViewFastScroller extends View {
     /** Sets the popup view to show while the scroller is being dragged */
     public void setPopupView(TextView popupView) {
         mPopupView = popupView;
+        // Lawnchair: its own paint, as the thumb's color no longer matches the popup's.
+        Paint popupPaint = new Paint(mThumbPaint);
+        popupPaint.setColor(mThumbColor);
         mPopupView.setBackground(
-                new FastScrollThumbDrawable(mThumbPaint, Utilities.isRtl(getResources())));
+                new FastScrollThumbDrawable(popupPaint, Utilities.isRtl(getResources())));
     }
 
     public void setRecyclerView(FastScrollRecyclerView rv) {
@@ -413,8 +418,7 @@ public class RecyclerViewFastScroller extends View {
             }
             canvas.translate(translateX, mThumbOffsetY);
         } else {
-            canvas.drawRoundRect(-halfW, 0, halfW, mRv.getScrollbarTrackHeight(),
-                    mWidth, mWidth, mTrackPaint);
+            // Lawnchair: no track, just the thumb, like a glass page's scroll indicator.
             canvas.translate(0, mThumbOffsetY);
         }
         mThumbDrawOffset.y += mThumbOffsetY;
@@ -427,7 +431,9 @@ public class RecyclerViewFastScroller extends View {
             mThumbBounds.set(0, 0, 0, mThumbHeight);
             canvas.drawCircle(-halfW, halfW, r * 2, mThumbPaint);
         } else {
-            mThumbPaint.setColor(mThumbColor);
+            // Lawnchair: a soft white thumb that brightens while it's held, instead of the accent
+            // color. The drawer's tint is dark in both themes, so white reads on it.
+            mThumbPaint.setColor(mIsDragging ? THUMB_COLOR_ACTIVE : THUMB_COLOR);
             mThumbBounds.set(-halfW, 0, halfW, mThumbHeight);
             canvas.drawRoundRect(mThumbBounds, r, r, mThumbPaint);
         }

@@ -192,15 +192,24 @@ class TodayView(
         return true
     }
 
-    /** Follows the gesture, and returns true once this view should take it from its children. */
+    /**
+     * Follows the gesture, and returns true once this view should take it from its children.
+     *
+     * It works in screen coordinates: this view moves while it's dragged closed, so its own
+     * coordinates would shift under the finger and make the drag jitter back and forth.
+     */
     private fun track(ev: MotionEvent): Boolean {
         if (velocityTracker == null) velocityTracker = VelocityTracker.obtain()
-        velocityTracker?.addMovement(ev)
+        val screenEvent = MotionEvent.obtain(ev).apply { setLocation(ev.rawX, ev.rawY) }
+        velocityTracker?.addMovement(screenEvent)
+        screenEvent.recycle()
+        val x = ev.rawX
+        val y = ev.rawY
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = ev.x
-                downY = ev.y
-                lastY = ev.y
+                downX = x
+                downY = y
+                lastY = y
                 mode = Mode.None
                 flingJob?.cancel()
                 if (!state.editing.value && !state.addSheetOpen.value) {
@@ -209,8 +218,8 @@ class TodayView(
             }
 
             MotionEvent.ACTION_MOVE -> {
-                val dx = ev.x - downX
-                val dy = ev.y - downY
+                val dx = x - downX
+                val dy = y - downY
                 if (mode == Mode.None && (abs(dx) > slop || abs(dy) > slop)) {
                     removeCallbacks(longPressRunnable)
                     val towardsHome = if (isRtl) dx > 0 else dx < 0
@@ -220,14 +229,14 @@ class TodayView(
                         abs(dy) > abs(dx) -> Mode.Scroll
                         else -> Mode.Ignore
                     }
-                    lastY = ev.y
+                    lastY = y
                     if (mode == Mode.Close) overlay.onPageDragStart()
                 }
                 when (mode) {
                     Mode.Close -> overlay.onPageDrag(1f - abs(dx) / width.coerceAtLeast(1))
                     Mode.Scroll -> {
-                        state.scrollState.dispatchRawDelta(lastY - ev.y)
-                        lastY = ev.y
+                        state.scrollState.dispatchRawDelta(lastY - y)
+                        lastY = y
                     }
 
                     else -> Unit

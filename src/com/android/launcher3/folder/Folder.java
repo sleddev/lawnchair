@@ -42,9 +42,14 @@ import android.annotation.SuppressLint;
 import android.appwidget.AppWidgetHostView;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Insets;
+import android.graphics.LinearGradient;
+import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
+import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.input.InputManager;
@@ -306,6 +311,11 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     private KeyboardInsetAnimationCallback mKeyboardInsetAnimationCallback;
 
     private @NonNull GradientDrawable mBackground;
+    // Lawnchair: see drawGlassEdge. The shaders span 0..1 and are scaled onto the panel.
+    private final Paint mGlassPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Matrix mGlassMatrix = new Matrix();
+    private Shader mGlassSheenShader;
+    private Shader mGlassBorderShader;
 
     PreferenceManager2 preferenceManager2;
 
@@ -2095,6 +2105,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
             int count = canvas.save();
             canvas.clipPath(mClipPath.getPath());
             mBackground.draw(canvas);
+            drawGlassEdge(canvas);
             mSkipHeaderDraw = true;
             if (!mIsAnimatingClosed) {
                 // If animating open, clip the content to the clip path to keep in bounds.
@@ -2110,8 +2121,48 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
             drawChild(canvas, mFolderName, getDrawingTime());
         } else {
             mBackground.draw(canvas);
+            drawGlassEdge(canvas);
             super.dispatchDraw(canvas);
         }
+    }
+
+    /**
+     * Lawnchair: light falls on the panel from above, like on the closed folder icons and the
+     * dock: a faint sheen at the top of the fill, and a border that catches the light along the
+     * top edge and fades towards the bottom.
+     */
+    private void drawGlassEdge(Canvas canvas) {
+        Rect bounds = mBackground.getBounds();
+        if (bounds.isEmpty()) return;
+        if (mGlassSheenShader == null) {
+            Context context = getContext();
+            mGlassSheenShader = new LinearGradient(0, 0, 0, 0.5f,
+                    LawnchairUtilsKt.resolveFolderPreviewSheenColor(context), Color.TRANSPARENT,
+                    Shader.TileMode.CLAMP);
+            mGlassBorderShader = new LinearGradient(0, 0, 0, 1,
+                    LawnchairUtilsKt.resolveFolderPreviewBorderColor(context),
+                    LawnchairUtilsKt.resolveFolderPreviewBorderBottomColor(context),
+                    Shader.TileMode.CLAMP);
+            mGlassPaint.setStrokeWidth(getResources().getDisplayMetrics().density * 0.75f);
+        }
+        mGlassMatrix.setScale(1, bounds.height());
+        mGlassMatrix.postTranslate(0, bounds.top);
+        mGlassSheenShader.setLocalMatrix(mGlassMatrix);
+        mGlassBorderShader.setLocalMatrix(mGlassMatrix);
+
+        float radius = mBackground.getCornerRadius();
+        mGlassPaint.setAlpha(255);
+        mGlassPaint.setStyle(Paint.Style.FILL);
+        mGlassPaint.setShader(mGlassSheenShader);
+        canvas.drawRoundRect(bounds.left, bounds.top, bounds.right, bounds.bottom, radius, radius,
+                mGlassPaint);
+
+        float inset = mGlassPaint.getStrokeWidth() / 2;
+        mGlassPaint.setStyle(Paint.Style.STROKE);
+        mGlassPaint.setShader(mGlassBorderShader);
+        canvas.drawRoundRect(bounds.left + inset, bounds.top + inset, bounds.right - inset,
+                bounds.bottom - inset, radius - inset, radius - inset, mGlassPaint);
+        mGlassPaint.setShader(null);
     }
 
     @Override
