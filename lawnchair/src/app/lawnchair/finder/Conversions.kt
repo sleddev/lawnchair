@@ -23,7 +23,8 @@ data class Conversion(
 
 /**
  * Parses queries like "5 km", "70f", "10 kg to lb", "100 usd in eur", "$20" or "€15 to yen" and
- * converts them, like Spotlight's unit and currency conversions.
+ * converts them, like Spotlight's unit and currency conversions. Amounts can also be combined
+ * with math, like "12 eur + 34 usd to huf" or "(5 ft + 3 in) * 2 to cm".
  */
 object Conversions {
 
@@ -140,12 +141,19 @@ object Conversions {
         data class Money(val code: String) : Quantity
     }
 
+    private val Quantity.dimension: Any
+        get() = when (this) {
+            is Quantity.Physical -> unit.category
+            is Quantity.Money -> MONEY
+        }
+
     /**
      * Returns a conversion for [query], or null when it doesn't look like one. Currency
      * conversions need [rates] (units per USD); they're skipped when it's null.
      */
     fun convert(query: String, rates: Map<String, Double>?, locale: Locale = Locale.getDefault()): Conversion? {
-        val match = queryRegex.matchEntire(query.trim()) ?: return null
+        val match = queryRegex.matchEntire(query.trim())
+            ?: return convertExpression(query, rates, locale)
         val prefix = match.groups["prefix"]?.value?.trim()?.lowercase(locale).orEmpty()
         val numberText = match.groups["num"]?.value ?: return null
         val unitText = match.groups["unit"]?.value?.trim()?.lowercase(locale).orEmpty()
@@ -176,7 +184,8 @@ object Conversions {
 
     /** Whether [query] looks like it's a conversion, even if it can't be computed (yet). */
     fun isCurrencyQuery(query: String): Boolean {
-        val match = queryRegex.matchEntire(query.trim()) ?: return false
+        val match = queryRegex.matchEntire(query.trim())
+            ?: return parseWithTarget(query, null, Locale.getDefault())?.first?.usesMoney == true
         val prefix = match.groups["prefix"]?.value?.trim()?.lowercase().orEmpty()
         val unitText = match.groups["unit"]?.value?.trim()?.lowercase().orEmpty()
         if (prefix.isNotEmpty()) return unitText.isEmpty() && prefix in currencySymbols
@@ -199,6 +208,235 @@ object Conversions {
         }
         return null
     }
+
+    private val targetSplitRegex = Regex("(?<=\\s)(?:to|in|into|as)(?=\\s)|=|->|→", RegexOption.IGNORE_CASE)
+    private val operandNumberRegex = Regex("^(?:$numberPattern)".replace("[-+]?", ""))
+
+    // Every word that can follow (or for currencies, precede) a number, longest first so "km/h"
+    // wins over "km" and "fl oz" over "fl".
+    private val operandAliases: List<String> =
+        (unitsByAlias.keys + currencySymbols.keys + currencyNames.keys).sortedByDescending { it.length }
+    private val prefixSymbols = currencySymbols.keys.sortedByDescending { it.length }
+
+    /** A computed amount, in the base unit of its dimension (USD for money). */
+    private data class Amount(val value: Double, val dimension: Any?)
+
+    private class Expression(
+        val amount: Amount,
+        // The operands' units in order, the first one is used for the default targets.
+        val quantities: List<Quantity>,
+        val display: String,
+    ) {
+        val usesMoney get() = quantities.any { it is Quantity.Money }
+    }
+
+    /** Handles queries with math in them, like "12 eur + 34 usd to huf". */
+    private fun convertExpression(query: String, rates: Map<String, Double>?, locale: Locale): Conversion? {
+        val (expression, target) = parseWithTarget(query, rates, locale) ?: return null
+        if (expression.usesMoney && rates == null) return null
+        return expressionConversion(expression, target, rates.orEmpty(), locale)
+    }
+
+    private fun parseWithTarget(query: String, rates: Map<String, Double>?, locale: Locale): Pair<Expression, Quantity?>? {
+        val trimmed = query.trim().removeSuffix("=").trimEnd()
+        // Try the last "to ..." first, so "5 ft + 3 in to cm" doesn't split at "in".
+        for (split in targetSplitRegex.findAll(trimmed).toList().asReversed()) {
+            val targetText = trimmed.substring(split.range.last + 1).trim().lowercase(locale)
+            val target = parseQuantity(targetText, rates) ?: continue
+            val expression = parseExpression(trimmed.substring(0, split.range.first), rates, locale) ?: continue
+            return expression to target
+        }
+        return parseExpression(trimmed, rates, locale)?.let { it to null }
+    }
+
+    private fun expressionConversion(
+        expression: Expression,
+        target: Quantity?,
+        rates: Map<String, Double>,
+        locale: Locale,
+    ): Conversion? {
+        val amount = expression.amount
+        if (!amount.value.isFinite()) return null
+        // The result's unit, like the first "km" in "10 km + 5 mi" or "eur" in "60 usd / 3 usd * 2 eur".
+        val first = expression.quantities.firstOrNull { it.dimension == amount.dimension } ?: return null
+        val lines = when (first) {
+            is Quantity.Money -> {
+                if (target != null && target !is Quantity.Money) return null
+                val codes = if (target is Quantity.Money) {
+                    listOf(target.code)
+                } else {
+                    val local = runCatching { Currency.getInstance(locale).currencyCode }.getOrNull()
+                    listOf(first.code) + listOfNotNull(local, "USD", "EUR", "GBP").distinct().filter { it != first.code }.take(2)
+                }
+                codes.mapNotNull { code ->
+                    val result = amount.value * (rates[code] ?: return@mapNotNull null)
+                    ConversionLine(expression.display, formatMoney(result, code, locale), plainNumber(result, 2))
+                }
+            }
+
+            is Quantity.Physical -> {
+                if (target != null && (target !is Quantity.Physical || target.unit.category != first.unit.category)) return null
+                val targets = (target as? Quantity.Physical)?.let { listOf(it.unit) }
+                    ?: (listOf(first.unit) + first.unit.defaults.mapNotNull { unitsBySymbol[it] })
+                targets.map { unit ->
+                    val result = amount.value / unit.factor
+                    ConversionLine(expression.display, "${formatNumber(result, locale)} ${unit.symbol}", plainNumber(result))
+                }
+            }
+        }
+        if (lines.isEmpty()) return null
+        return Conversion(title = lines.first().to, lines = lines)
+    }
+
+    /**
+     * Parses +, -, *, / and parentheses over amounts like "12 eur", "$5" or "3 ft". It needs at
+     * least one operator and one amount with a unit, plain math is left to the calculator. Without
+     * [rates], money amounts are NaN but the expression still parses, to tell it needs rates.
+     */
+    private fun parseExpression(text: String, rates: Map<String, Double>?, locale: Locale): Expression? {
+        val parser = ExpressionParser(text.lowercase(locale).replace('−', '-'), rates, locale)
+        val amount = try {
+            parser.parse()
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        if (parser.operators == 0 || amount.dimension == null || parser.quantities.isEmpty()) return null
+        return Expression(amount, parser.quantities, parser.display.toString())
+    }
+
+    private class ExpressionParser(val text: String, val rates: Map<String, Double>?, val locale: Locale) {
+        var pos = 0
+        var operators = 0
+        val quantities = mutableListOf<Quantity>()
+        val display = StringBuilder()
+
+        fun parse(): Amount {
+            val amount = sum()
+            skipSpaces()
+            require(pos == text.length)
+            return amount
+        }
+
+        private fun sum(): Amount {
+            var left = product()
+            while (true) {
+                skipSpaces()
+                val op = text.getOrNull(pos)?.takeIf { it == '+' || it == '-' } ?: return left
+                pos++
+                operators++
+                display.append(" $op ")
+                val right = product()
+                require(left.dimension == right.dimension)
+                left = Amount(if (op == '+') left.value + right.value else left.value - right.value, left.dimension)
+            }
+        }
+
+        private fun product(): Amount {
+            var left = factor()
+            while (true) {
+                skipSpaces()
+                val op = text.getOrNull(pos)?.takeIf { it in "*×/÷" } ?: return left
+                pos++
+                operators++
+                display.append(if (op == '*' || op == '×') " × " else " ÷ ")
+                val right = factor()
+                left = if (op == '*' || op == '×') {
+                    require(left.dimension == null || right.dimension == null)
+                    Amount(left.value * right.value, left.dimension ?: right.dimension)
+                } else {
+                    // Dividing two amounts of the same kind gives a plain ratio.
+                    require(right.dimension == null || right.dimension == left.dimension)
+                    Amount(left.value / right.value, if (right.dimension == null) left.dimension else null)
+                }
+            }
+        }
+
+        private fun factor(): Amount {
+            skipSpaces()
+            when (text.getOrNull(pos)) {
+                '-' -> {
+                    pos++
+                    display.append('-')
+                    val inner = factor()
+                    return inner.copy(value = -inner.value)
+                }
+
+                '(' -> {
+                    pos++
+                    display.append('(')
+                    val inner = sum()
+                    skipSpaces()
+                    require(text.getOrNull(pos) == ')')
+                    pos++
+                    display.append(')')
+                    return inner
+                }
+            }
+            return operand()
+        }
+
+        private fun operand(): Amount {
+            val prefix = prefixSymbols.firstOrNull { text.startsWith(it, pos) }
+            if (prefix != null) pos += prefix.length
+            skipSpaces()
+            val number = operandNumberRegex.find(text.substring(pos))
+            requireNotNull(number)
+            pos += number.value.length
+            val value = number.value.replace(",", "").toDouble()
+
+            val quantity = if (prefix != null) {
+                Quantity.Money(currencySymbols.getValue(prefix))
+            } else {
+                unit()
+            }
+            if (quantity == null) {
+                display.append(formatNumber(value, locale))
+                return Amount(value, null)
+            }
+            quantities += quantity
+            return when (quantity) {
+                is Quantity.Money -> {
+                    display.append(formatMoney(value, quantity.code, locale, withCode = false))
+                    val rate = if (rates == null) Double.NaN else requireNotNull(rates[quantity.code])
+                    Amount(value / rate, MONEY)
+                }
+
+                is Quantity.Physical -> {
+                    // Temperatures don't add up linearly.
+                    require(quantity.unit.category != Category.TEMPERATURE)
+                    display.append("${formatNumber(value, locale)} ${quantity.unit.symbol}")
+                    Amount(value * quantity.unit.factor, quantity.unit.category)
+                }
+            }
+        }
+
+        private fun unit(): Quantity? {
+            val start = pos
+            skipSpaces()
+            val alias = operandAliases.firstOrNull { text.startsWith(it, pos) && isBoundary(pos + it.length) }
+            if (alias != null) {
+                pos += alias.length
+                return parseQuantity(alias, rates)
+            }
+            val code = text.substring(pos).take(3)
+            if (code.length == 3 && code.all { it.isLetter() } && isBoundary(pos + 3)) {
+                parseQuantity(code, rates)?.let {
+                    pos += 3
+                    return it
+                }
+            }
+            pos = start
+            return null
+        }
+
+        private fun isBoundary(index: Int) = index >= text.length || text[index].isWhitespace() || text[index] in "+-*×/÷()"
+
+        private fun skipSpaces() {
+            while (pos < text.length && text[pos].isWhitespace()) pos++
+        }
+    }
+
+    private const val MONEY = "money"
 
     private fun convertUnits(amount: BigDecimal, from: Unit, to: Unit?, locale: Locale): Conversion? {
         val targets = if (to != null) {
@@ -264,7 +502,7 @@ object Conversions {
         return Conversion(title = lines.first().to, lines = lines)
     }
 
-    private fun formatMoney(value: Double, code: String, locale: Locale): String {
+    private fun formatMoney(value: Double, code: String, locale: Locale, withCode: Boolean = true): String {
         val currency = runCatching { Currency.getInstance(code) }.getOrNull()
             ?: return "${formatNumber(value, locale)} $code"
         val format = NumberFormat.getCurrencyInstance(locale).apply {
@@ -275,7 +513,7 @@ object Conversions {
         val formatted = format.format(value)
         // Ambiguous symbols like "$" get the currency code, like "$100 USD".
         val symbol = currency.getSymbol(locale)
-        return if (symbol.length <= 2 && !formatted.contains(code)) "$formatted $code" else formatted
+        return if (withCode && symbol.length <= 2 && !formatted.contains(code)) "$formatted $code" else formatted
     }
 
     private fun formatNumber(value: Double, locale: Locale): String {

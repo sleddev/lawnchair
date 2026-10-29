@@ -1,8 +1,10 @@
 package app.lawnchair.finder
 
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import androidx.lifecycle.lifecycleScope
 import app.lawnchair.LawnchairLauncher
+import app.lawnchair.gestures.HorizontalSwipeFilter
 import app.lawnchair.gestures.config.GestureHandlerConfig
 import app.lawnchair.preferences2.PreferenceManager2
 import com.android.launcher3.AbstractFloatingView
@@ -21,11 +23,17 @@ class FinderTouchController(private val launcher: LawnchairLauncher) :
     TouchController,
     SingleAxisSwipeDetector.Listener {
 
-    private val detector = SingleAxisSwipeDetector(launcher, this, SingleAxisSwipeDetector.VERTICAL)
+    private val detector = SingleAxisSwipeDetector(launcher, this, SingleAxisSwipeDetector.VERTICAL).apply {
+        // A bit more travel before grabbing, so a sideways swipe has time to show it's one.
+        setTouchSlopMultiplier(TOUCH_SLOP_MULTIPLIER)
+    }
     private val dragDistance = launcher.resources.displayMetrics.density * DRAG_DISTANCE_DP
+    private val touchSlop = ViewConfiguration.get(launcher).scaledTouchSlop.toFloat()
 
     private var enabled = false
     private var noIntercept = false
+    private var downX = 0f
+    private var downY = 0f
     private var finder: FinderView? = null
 
     init {
@@ -39,8 +47,18 @@ class FinderTouchController(private val launcher: LawnchairLauncher) :
             noIntercept = !canInterceptTouch(ev)
             if (noIntercept) return false
             detector.setDetectableScrollConditions(SingleAxisSwipeDetector.DIRECTION_NEGATIVE, false)
+            downX = ev.x
+            downY = ev.y
         }
         if (noIntercept) return false
+        if (ev.actionMasked == MotionEvent.ACTION_MOVE && !detector.isDraggingOrSettling &&
+            HorizontalSwipeFilter.isHorizontalSwipe(ev.x - downX, ev.y - downY, touchSlop / 2f)
+        ) {
+            // A sideways swipe that drifts down belongs to the workspace. The detector alone takes
+            // anything steeper than 45°, which caught diagonal page swipes.
+            noIntercept = true
+            return false
+        }
         onControllerTouchEvent(ev)
         return detector.isDraggingOrSettling
     }
@@ -94,5 +112,6 @@ class FinderTouchController(private val launcher: LawnchairLauncher) :
         private const val DRAG_DISTANCE_DP = 180f
         private const val OPEN_THRESHOLD = 0.4f
         private const val FLING_VELOCITY = 0.6f
+        private const val TOUCH_SLOP_MULTIPLIER = 1.5f
     }
 }
