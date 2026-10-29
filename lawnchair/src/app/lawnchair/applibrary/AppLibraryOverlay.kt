@@ -6,7 +6,7 @@ import android.animation.ValueAnimator
 import android.os.Looper
 import android.view.ViewGroup
 import app.lawnchair.LawnchairLauncher
-import com.android.app.animation.Interpolators
+import app.lawnchair.util.PageSnap
 import com.android.launcher3.Utilities
 import com.android.systemui.plugins.shared.LauncherOverlayManager.LauncherOverlay
 import com.android.systemui.plugins.shared.LauncherOverlayManager.LauncherOverlayCallbacks
@@ -83,11 +83,9 @@ class AppLibraryOverlay(private val launcher: LawnchairLauncher) : LauncherOverl
             setProgress(target)
             return
         }
-        val speed = 1f + abs(velocity) / launcher.resources.displayMetrics.widthPixels
         animator = ValueAnimator.ofFloat(progress, target).apply {
-            this.duration = duration
-                ?: (SETTLE_DURATION_MS * distance.coerceAtLeast(0.3f) / speed).toLong().coerceAtLeast(120)
-            interpolator = Interpolators.DECELERATE_3
+            this.duration = duration ?: PageSnap.duration(launcher, distance, velocity)
+            interpolator = PageSnap.interpolator
             addUpdateListener { setProgress(it.animatedValue as Float) }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
@@ -171,7 +169,6 @@ class AppLibraryOverlay(private val launcher: LawnchairLauncher) : LauncherOverl
     }
 
     companion object {
-        private const val SETTLE_DURATION_MS = 350f
         private const val HIDE_DURATION_MS = 250L
         private const val FLING_THRESHOLD_DP = 500f
     }
