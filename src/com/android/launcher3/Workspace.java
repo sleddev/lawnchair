@@ -315,6 +315,11 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
     private float mOverlayProgress; // 1 -> overlay completely visible, 0 -> home visible
     private final List<LauncherOverlayCallbacks> mOverlayCallbacks = new ArrayList<>();
 
+    // Lawnchair: an overlay past the last page (the App Library), mirroring the -1 screen.
+    private OverlayEdgeEffect mEndOverlayEdgeEffect;
+    private boolean mEndOverlayShown = false;
+    private float mEndOverlayProgress; // 1 -> overlay completely visible, 0 -> home visible
+
     private boolean mForceDrawAdjacentPages = false;
 
     // Handles workspace state transitions
@@ -1487,10 +1492,62 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
         return mOverlayEdgeEffect != null;
     }
 
+    /**
+     * Lawnchair: sets the overlay that's pulled in past the last page, the same way the -1 screen
+     * is pulled in past the first one.
+     */
+    public void setEndOverlay(LauncherOverlayTouchProxy overlay) {
+        final EdgeEffectCompat newEffect;
+        if (overlay == null) {
+            newEffect = EdgeEffectCompat.create(getContext(), this);
+            mEndOverlayEdgeEffect = null;
+        } else {
+            newEffect = mEndOverlayEdgeEffect = new OverlayEdgeEffect(getContext(), overlay);
+            overlay.setOverlayCallbacks(this::onEndOverlayScrollChanged);
+        }
+
+        if (mIsRtl) {
+            mEdgeGlowLeft = newEffect;
+        } else {
+            mEdgeGlowRight = newEffect;
+        }
+        onEndOverlayScrollChanged(0);
+    }
+
+    public boolean hasEndOverlay() {
+        return mEndOverlayEdgeEffect != null;
+    }
+
+    /** Lawnchair: the end overlay's progress, see {@link #onOverlayScrollChanged}. */
+    public void onEndOverlayScrollChanged(float scroll) {
+        mEndOverlayProgress = Utilities.boundToRange(scroll, 0, 1);
+        if (Float.compare(mEndOverlayProgress, 1f) == 0) {
+            if (!mEndOverlayShown) {
+                mEndOverlayShown = true;
+                mLauncher.onOverlayVisibilityChanged(true);
+            }
+        } else if (Float.compare(mEndOverlayProgress, 0f) == 0) {
+            if (mEndOverlayShown) {
+                mEndOverlayShown = false;
+                mLauncher.onOverlayVisibilityChanged(false);
+            }
+        }
+        DragLayer dragLayer = mLauncher.getDragLayer();
+        if (dragLayer != null) {
+            dragLayer.onEndOverlayScrollChanged(mEndOverlayProgress);
+        }
+    }
+
+    public boolean isEndOverlayShown() {
+        return mEndOverlayShown;
+    }
+
     @Override
     protected void snapToDestination() {
         if (mOverlayEdgeEffect != null && !mOverlayEdgeEffect.isFinished()) {
             snapToPageImmediately(0);
+        } else if (mEndOverlayEdgeEffect != null && !mEndOverlayEdgeEffect.isFinished()) {
+            snapToPageImmediately(getChildCount() - 1);
         } else {
             super.snapToDestination();
         }
@@ -1529,8 +1586,13 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
         if (!mPreferenceManger.getInfiniteScrolling().get()) {
             return false;
         }
-        // LC-Note: The side before the first page belongs to the feed while it is on.
-        return getPageAtEnd(maxEnd) != 0
+        // LC-Note: The side before the first page belongs to the feed while it is on, and the
+        // side after the last page to the end overlay.
+        int page = getPageAtEnd(maxEnd);
+        if (mEndOverlayEdgeEffect != null && page == getChildCount() - 1) {
+            return false;
+        }
+        return page != 0
                 || !PreferenceCacheExtensionsKt.firstCached(mPreferenceManager2.getEnableFeed());
     }
 
@@ -1538,6 +1600,7 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
     protected boolean shouldFlingForVelocity(int velocityX) {
         // When the overlay is moving, the fling or settle transition is controlled by the overlay.
         return Float.compare(Math.abs(mOverlayProgress), 0) == 0
+                && Float.compare(mEndOverlayProgress, 0) == 0
                 && super.shouldFlingForVelocity(velocityX);
     }
 
@@ -3902,7 +3965,7 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
     }
 
     public boolean isOverlayShown() {
-        return mOverlayShown;
+        return mOverlayShown || mEndOverlayShown;
     }
 
     /**
@@ -3972,7 +4035,8 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
 
     @Override
     protected boolean canAnnouncePageDescription() {
-        return Float.compare(mOverlayProgress, 0f) == 0;
+        return Float.compare(mOverlayProgress, 0f) == 0
+                && Float.compare(mEndOverlayProgress, 0f) == 0;
     }
 
     @Override

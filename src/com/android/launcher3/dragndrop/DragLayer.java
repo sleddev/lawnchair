@@ -493,10 +493,25 @@ public class DragLayer extends BaseDragLayer<Launcher> implements LauncherOverla
         return mWorkspaceDragScrim;
     }
 
+    // Lawnchair: the -1 screen pushes everything right, the end overlay (App Library) left.
+    private float mOverlayProgress;
+    private float mEndOverlayProgress;
+
     @Override
     public void onOverlayScrollChanged(float progress) {
+        mOverlayProgress = progress;
+        updateOverlayTranslation();
+    }
+
+    public void onEndOverlayScrollChanged(float progress) {
+        mEndOverlayProgress = progress;
+        updateOverlayTranslation();
+    }
+
+    private void updateOverlayTranslation() {
+        float progress = Math.max(mOverlayProgress, mEndOverlayProgress);
         float alpha = 1 - Interpolators.DECELERATE_3.getInterpolation(progress);
-        float transX = getMeasuredWidth() * progress;
+        float transX = getMeasuredWidth() * (mOverlayProgress - mEndOverlayProgress);
 
         if (mIsRtl) {
             transX = -transX;

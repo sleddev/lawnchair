@@ -34,6 +34,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import app.lawnchair.LawnchairApp.Companion.showQuickstepWarningIfNecessary
+import app.lawnchair.applibrary.AppLibraryOverlay
 import app.lawnchair.compat.LawnchairQuickstepCompat
 import app.lawnchair.data.AppDatabase
 import app.lawnchair.data.wallpaper.service.WallpaperService
@@ -105,6 +106,10 @@ class LawnchairLauncher : QuickstepLauncher() {
         SwitchingOverlayManager(this, useTodayOverlay(), preferenceManager2.enableFeed.firstCached())
     }
     private val preferenceManager2 by unsafeLazy { PreferenceManager2.getInstance(this) }
+
+    /** The App Library, past the last home page. */
+    var appLibrary: AppLibraryOverlay? = null
+        private set
     private val insetsController: WindowInsetsControllerCompat by lazy {
         val window = launcher.window
             ?: throw Exception("WindowInsetsControllerCompat not available.")
@@ -183,6 +188,10 @@ class LawnchairLauncher : QuickstepLauncher() {
             defaultOverlay.apply(useTodayOverlay(), enable)
         }.launchIn(scope = lifecycleScope)
         launcher.stateManager.addStateListener(clearSearchStateListener)
+        appLibrary = AppLibraryOverlay(this).also {
+            it.attach()
+            defaultOverlay.appLibrary = it
+        }
 
         if (prefs.autoLaunchRoot.get()) {
             lifecycleScope.launch {
@@ -487,6 +496,7 @@ class LawnchairLauncher : QuickstepLauncher() {
     override fun onResume() {
         super.onResume()
         restartIfPending()
+        appLibrary?.onResume()
         refreshPredictionContainersFromModel()
 
         dragLayer.viewTreeObserver.addOnDrawListener(
@@ -516,6 +526,8 @@ class LawnchairLauncher : QuickstepLauncher() {
 
     override fun onDestroy() {
         super.onDestroy()
+        appLibrary?.destroy()
+        appLibrary = null
         // Only actually closes if required, safe to call if not enabled
         SmartspacerClient.close()
     }

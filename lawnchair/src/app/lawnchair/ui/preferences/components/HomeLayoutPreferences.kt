@@ -132,7 +132,7 @@ fun HomeLayoutSettings(
                 }
             } else {
                 coroutineScope.launch {
-                    prefs2.swipeUpGestureHandler.set(GestureHandlerConfig.OpenAppDrawer)
+                    prefs2.swipeUpGestureHandler.set(GestureHandlerConfig.NoOp)
                     prefs2.deckLayout.set(false)
                     withContext(Dispatchers.IO) {
                         deckManager.disableLawndeck()

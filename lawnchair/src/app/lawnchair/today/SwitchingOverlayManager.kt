@@ -2,6 +2,7 @@ package app.lawnchair.today
 
 import android.content.Intent
 import app.lawnchair.LawnchairLauncher
+import app.lawnchair.applibrary.AppLibraryOverlay
 import app.lawnchair.nexuslauncher.OverlayCallbackImpl
 import com.android.systemui.plugins.shared.LauncherOverlayManager
 import java.io.PrintWriter
@@ -20,6 +21,9 @@ class SwitchingOverlayManager(
     private var feedEnabled = feedEnabled
     private var external: OverlayCallbackImpl? = null
     private var today: TodayOverlay? = null
+
+    /** The App Library on the other side, which closes along with the -1 screen. */
+    var appLibrary: AppLibraryOverlay? = null
 
     // The lifecycle the current delegate has been told about, to catch a new one up.
     private var windowAttached = false
@@ -88,9 +92,15 @@ class SwitchingOverlayManager(
 
     override fun openOverlay() = current.openOverlay()
 
-    override fun hideOverlay(animate: Boolean) = current.hideOverlay(animate)
+    override fun hideOverlay(animate: Boolean) {
+        current.hideOverlay(animate)
+        appLibrary?.hide(animate)
+    }
 
-    override fun hideOverlay(duration: Int) = current.hideOverlay(duration)
+    override fun hideOverlay(duration: Int) {
+        current.hideOverlay(duration)
+        appLibrary?.hide(duration.toLong())
+    }
 
     override fun onActivityStarted() {
         started = true

@@ -840,7 +840,8 @@ class PreferenceManager2 @Inject constructor(
 
     val swipeUpGestureHandler = serializablePreference<GestureHandlerConfig>(
         key = stringPreferencesKey("swipe_up_gesture_handler"),
-        defaultValue = GestureHandlerConfig.OpenAppDrawer,
+        // LC: there's no swipe up app drawer; apps live in the App Library past the last page.
+        defaultValue = GestureHandlerConfig.NoOp,
     )
 
     val swipeDownGestureHandler = serializablePreference<GestureHandlerConfig>(

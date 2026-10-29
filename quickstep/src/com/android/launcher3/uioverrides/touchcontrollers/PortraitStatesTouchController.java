@@ -67,6 +67,10 @@ public class PortraitStatesTouchController extends AbstractStateChangeTouchContr
                     return false;
                 }
         }
+        // Lawnchair: there's no swipe up app drawer; apps live in the App Library instead.
+        if (mCurrentAnimation == null && mLauncher.isInState(NORMAL)) {
+            return false;
+        }
         // If we are swiping to all apps instead of overview, allow it from anywhere.
         boolean interceptAnywhere = mLauncher.isInState(NORMAL);
         if (mCurrentAnimation != null) {
