@@ -360,8 +360,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
 
         mBackground = DrawableTokens.RoundRectFolder.resolve(getContext());
         mBackground.setColor(LawnchairUtilsKt.resolveFolderBackgroundColor(getContext()));
-        var alpha = LawnchairUtilsKt.getFolderBackgroundAlpha(getContext());
-        mBackground.setAlpha(alpha);
+        mBackground.setAlpha(LawnchairUtilsKt.resolveFolderBackgroundAlpha(getContext()));
         mBackground.setCornerRadius(
                 getResources().getDimension(R.dimen.folder_panel_corner_radius));
 
@@ -897,6 +896,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         mContent.bindItems(items);
         mContent.setCanAnnouncePageDescriptionForFolder(true);
         centerAboutIcon();
+        // Lawnchair: window blurs may have been turned on or off (battery saver) since inflation.
+        mBackground.setAlpha(LawnchairUtilsKt.resolveFolderBackgroundAlpha(getContext()));
         mItemsInvalidated = true;
         updateTextViewFocus();
 

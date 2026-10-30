@@ -255,9 +255,19 @@ fun resolveFolderPreviewSheenColor(context: Context): Int = if (Utilities.isDark
 /**
  * Open-folder background fill color.
  * Opacity is applied separately via [getFolderBackgroundAlpha] on the drawable.
- * By default it's a translucent One UI style "frosted" panel over the blurred background.
+ * By default it's a translucent One UI style "frosted" panel over the blurred background. Without
+ * window blurs (with battery saver, say) there's nothing blurred behind it, so it's solid.
  */
 fun resolveFolderBackgroundColor(context: Context): Int {
+    val color = resolveFolderGlassColor(context)
+    return if (isWindowBlurEnabled(context)) color else ColorUtils.setAlphaComponent(color, 0xFF)
+}
+
+/** The open folder's background drawable alpha, see [resolveFolderBackgroundColor]. */
+fun resolveFolderBackgroundAlpha(context: Context): Int =
+    if (isWindowBlurEnabled(context)) getFolderBackgroundAlpha(context) else 0xFF
+
+private fun resolveFolderGlassColor(context: Context): Int {
     val custom = getCustomFolderColor(context)
     return if (custom != 0) {
         custom
