@@ -51,6 +51,12 @@ object GlassPopup {
     /** How far the home screen behind is blurred, the same as behind an open folder. */
     const val BLUR_DEPTH = 0.3f
 
+    /**
+     * How far an open folder or the finder is blurred when a menu opens over it, about as far as
+     * the home screen's icons are at [BLUR_DEPTH].
+     */
+    const val PANEL_BLUR_RADIUS_DP = 22f
+
     private const val TEXT_SIZE_SP = 16f
     private const val ROW_PADDING_DP = 16
     private const val SYSTEM_ICON_DP = 20

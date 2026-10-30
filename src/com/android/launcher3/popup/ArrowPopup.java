@@ -32,6 +32,8 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -60,6 +62,9 @@ import com.android.launcher3.util.RunnableList;
 import com.android.launcher3.util.Themes;
 import com.android.launcher3.views.ActivityContext;
 import com.android.launcher3.views.BaseDragLayer;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import app.lawnchair.theme.color.tokens.ColorTokens;
 import app.lawnchair.theme.drawable.DrawableTokens;
@@ -151,6 +156,9 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
     // The blur behind the popup, if it's ours to set: something else, like an open folder or the
     // finder, may already be blurring the home screen.
     private MultiPropertyFactory<?>.MultiProperty mGlassBlur;
+    // Panels already open under the popup, like a folder or the finder. The home screen blur
+    // doesn't reach them, so they're blurred themselves.
+    private final List<View> mGlassBlurredViews = new ArrayList<>();
 
     public ArrowPopup(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
@@ -476,6 +484,23 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
         MultiPropertyFactory<?>.MultiProperty blur = mActivityContext.getDepthController() != null
                 ? mActivityContext.getDepthController().getFolderDepth() : null;
         mGlassBlur = blur != null && blur.getValue() == 0f ? blur : null;
+
+        if (Utilities.ATLEAST_S) {
+            for (int i = 0; i < dragLayer.indexOfChild(mGlassBackdrop); i++) {
+                if (dragLayer.getChildAt(i) instanceof AbstractFloatingView view
+                        && view.isOpen() && view.getVisibility() == VISIBLE) {
+                    mGlassBlurredViews.add(view);
+                }
+            }
+        }
+    }
+
+    private void setGlassViewsBlur(float radius) {
+        RenderEffect effect = radius > 0f
+                ? RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.DECAL) : null;
+        for (View view : mGlassBlurredViews) {
+            view.setRenderEffect(effect);
+        }
     }
 
     /**
@@ -582,6 +607,15 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
             anim.setInterpolator(isOpening ? EMPHASIZED_DECELERATE : EMPHASIZED_ACCELERATE);
             out.play(anim);
         }
+        if (!mGlassBlurredViews.isEmpty()) {
+            float maxRadius = GlassPopup.dp(getContext(), GlassPopup.PANEL_BLUR_RADIUS_DP);
+            ValueAnimator anim = isOpening
+                    ? ValueAnimator.ofFloat(0f, maxRadius) : ValueAnimator.ofFloat(maxRadius, 0f);
+            anim.addUpdateListener(a -> setGlassViewsBlur((float) a.getAnimatedValue()));
+            anim.setDuration(duration);
+            anim.setInterpolator(isOpening ? EMPHASIZED_DECELERATE : EMPHASIZED_ACCELERATE);
+            out.play(anim);
+        }
     }
 
     private void removeGlassBackdrop() {
@@ -593,6 +627,8 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
             mGlassBlur.setValue(0f);
             mGlassBlur = null;
         }
+        setGlassViewsBlur(0f);
+        mGlassBlurredViews.clear();
     }
 
     private int getArrowLeft() {
