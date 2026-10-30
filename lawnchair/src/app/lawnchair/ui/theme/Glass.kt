@@ -33,6 +33,31 @@ object Glass {
     fun scrimTop(dark: Boolean) = argb(0x000000, if (dark) 0.40f else 0.30f)
     fun scrim(dark: Boolean) = argb(0x000000, if (dark) 0.18f else 0.10f)
 
+    /**
+     * The scrim's colors from top to bottom. Without window blurs (with battery saver, say) there's
+     * no blurred wallpaper under it, so it's solid instead: the scrim over a darkened [wallpaper]
+     * color, roughly what the blurred wallpaper looks like. [wallpaper] is `0` when it isn't known.
+     */
+    fun scrimColors(dark: Boolean, blurred: Boolean, wallpaper: Int): IntArray {
+        if (blurred) return intArrayOf(scrimTop(dark), scrim(dark), scrim(dark))
+        val base = solidBase(wallpaper)
+        val top = ColorUtils.compositeColors(scrimTop(dark), base)
+        val rest = ColorUtils.compositeColors(scrim(dark), base)
+        return intArrayOf(top, rest, rest)
+    }
+
+    private fun solidBase(wallpaper: Int): Int {
+        if (wallpaper == 0) return SOLID_FALLBACK
+        // Darkened, so the white text on the scrim stays readable on a light wallpaper.
+        return ColorUtils.blendARGB(0xFF000000.toInt() or wallpaper, SOLID_FALLBACK, 0.55f)
+    }
+
+    private const val SOLID_FALLBACK = 0xFF26262A.toInt()
+
+    /** A card's fill when it can't sit on a blur, see [scrimColors]: the same colors, solid. */
+    fun solidCardTop(dark: Boolean) = if (dark) 0xFF3A3A40.toInt() else 0xFFFFFFFF.toInt()
+    fun solidCardBottom(dark: Boolean) = if (dark) 0xFF2C2C31.toInt() else 0xFFF4F4F6.toInt()
+
     /** Text drawn straight on the scrim, like section headers. It's white in both themes. */
     val PageText = Color.White
 
@@ -41,11 +66,14 @@ object Glass {
 
     fun cardFill(dark: Boolean) = Brush.verticalGradient(listOf(Color(cardTop(dark)), Color(cardBottom(dark))))
     fun border(dark: Boolean) = Brush.verticalGradient(listOf(Color(borderTop(dark)), Color(borderBottom(dark))))
-    fun scrimBrush(dark: Boolean) = Brush.verticalGradient(
-        0f to Color(scrimTop(dark)),
-        0.35f to Color(scrim(dark)),
-        1f to Color(scrim(dark)),
-    )
+    fun scrimBrush(dark: Boolean, blurred: Boolean = true, wallpaper: Int = 0): Brush {
+        val colors = scrimColors(dark, blurred, wallpaper)
+        return Brush.verticalGradient(
+            0f to Color(colors[0]),
+            0.35f to Color(colors[1]),
+            1f to Color(colors[2]),
+        )
+    }
 
     private fun argb(rgb: Int, alpha: Float) = ColorUtils.setAlphaComponent(0xFF000000.toInt() or rgb, (alpha * 255).toInt())
 }

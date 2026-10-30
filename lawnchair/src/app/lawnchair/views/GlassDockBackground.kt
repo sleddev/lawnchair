@@ -120,8 +120,8 @@ class GlassDockBackground(private val view: View) {
         fillPaint.color = if (blurDrawable != null && blurEnabled) {
             ColorUtils.setAlphaComponent(folderColor, folderAlpha)
         } else {
-            // Without blur, a more opaque tint keeps the icons readable.
-            ColorUtils.setAlphaComponent(folderColor, maxOf(folderAlpha, 0xCC))
+            // Without blur (with battery saver, say), a solid tint keeps the icons readable.
+            ColorUtils.setAlphaComponent(folderColor, 0xFF)
         }
         updateShaders()
     }

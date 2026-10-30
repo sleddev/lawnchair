@@ -90,14 +90,16 @@ import app.lawnchair.ui.theme.Glass
 import app.lawnchair.ui.theme.Motion
 import app.lawnchair.ui.theme.glassClickable
 import app.lawnchair.ui.theme.staggeredEntrance
+import app.lawnchair.util.rememberWindowBlurEnabled
+import app.lawnchair.util.wallpaperPrimaryColor
 import com.android.launcher3.BaseActivity
 import com.android.launcher3.model.data.AppInfo
 import com.android.launcher3.views.ActivityContext
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 
-private class FinderColors(val dark: Boolean) {
+private class FinderColors(val dark: Boolean, blurred: Boolean, wallpaper: Int) {
     // The same glass as the Today page and the app drawer, see Glass.
-    val scrim = Glass.scrimBrush(dark)
+    val scrim = Glass.scrimBrush(dark, blurred, wallpaper)
     val card = Glass.cardFill(dark)
     val border = Glass.border(dark)
     val field = Color(Glass.field(dark))
@@ -122,7 +124,9 @@ internal fun FinderContent(
     onDismiss: () -> Unit,
     onScrolled: () -> Unit,
 ) {
-    val colors = remember(isDark) { FinderColors(isDark) }
+    val context = LocalContext.current
+    val blurred by rememberWindowBlurEnabled()
+    val colors = remember(isDark, blurred) { FinderColors(isDark, blurred, wallpaperPrimaryColor(context)) }
     val density = LocalDensity.current
     var query by rememberSaveable { mutableStateOf("") }
     val results by search.results.collectAsState()

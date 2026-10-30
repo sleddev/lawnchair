@@ -28,6 +28,8 @@ import app.lawnchair.preferences2.firstCached
 import app.lawnchair.ui.theme.Glass
 import app.lawnchair.ui.theme.LawnchairTheme
 import app.lawnchair.util.ProvideLifecycleState
+import app.lawnchair.util.observeWindowBlur
+import app.lawnchair.util.wallpaperPrimaryColor
 import com.android.launcher3.BubbleTextView
 import com.android.launcher3.DragSource
 import com.android.launcher3.DropTarget
@@ -74,10 +76,12 @@ class AppLibraryView(
     /** Dims the blurred wallpaper, fading in rather than sliding in with the page. */
     val scrim = View(launcher).apply {
         layoutParams = InsettableFrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply { ignoreInsets = true }
-        background = GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(Glass.scrimTop(isDark), Glass.scrim(isDark), Glass.scrim(isDark)),
-        )
+        val gradient = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, null)
+        background = gradient
+        // Solid when there's no blur under it.
+        observeWindowBlur { blurred ->
+            gradient.colors = Glass.scrimColors(isDark, blurred, wallpaperPrimaryColor(launcher))
+        }
         alpha = 0f
         visibility = GONE
     }

@@ -22,6 +22,7 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.core.graphics.ColorUtils
 import app.lawnchair.ui.theme.Glass
+import app.lawnchair.util.isWindowBlurEnabled
 import com.android.launcher3.BubbleTextView
 import com.android.launcher3.R
 import com.android.launcher3.Utilities
@@ -131,10 +132,14 @@ object GlassPopup {
     private fun argb(color: Int, alpha: Float) = ColorUtils.setAlphaComponent(color, (alpha * 255).toInt())
 }
 
-/** The menu's frosted card: lighter at the top, with a hairline that catches the light along the top. */
+/**
+ * The menu's frosted card: lighter at the top, with a hairline that catches the light along the top.
+ * It's solid when window blurs are off, since the home screen behind it isn't blurred then.
+ */
 class GlassCardDrawable(context: Context) : Drawable() {
 
     private val dark = GlassPopup.isDark(context)
+    private val blurred = isWindowBlurEnabled(context)
     private val radius = GlassPopup.dp(context, GlassPopup.CORNER_RADIUS_DP).toFloat()
     private val stroke = context.resources.displayMetrics.density * 0.75f
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -147,7 +152,9 @@ class GlassCardDrawable(context: Context) : Drawable() {
     override fun onBoundsChange(bounds: Rect) {
         val top = bounds.top.toFloat()
         val bottom = bounds.bottom.toFloat()
-        fill.shader = LinearGradient(0f, top, 0f, bottom, Glass.cardTop(dark), Glass.cardBottom(dark), Shader.TileMode.CLAMP)
+        val fillTop = if (blurred) Glass.cardTop(dark) else Glass.solidCardTop(dark)
+        val fillBottom = if (blurred) Glass.cardBottom(dark) else Glass.solidCardBottom(dark)
+        fill.shader = LinearGradient(0f, top, 0f, bottom, fillTop, fillBottom, Shader.TileMode.CLAMP)
         border.shader = LinearGradient(0f, top, 0f, bottom, Glass.borderTop(dark), Glass.borderBottom(dark), Shader.TileMode.CLAMP)
     }
 
