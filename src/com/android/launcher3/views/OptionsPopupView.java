@@ -136,6 +136,11 @@ public class OptionsPopupView<T extends Context & ActivityContext> extends Arrow
         return (type & TYPE_OPTIONS_POPUP) != 0;
     }
 
+    @Override
+    protected boolean isGlassStyle() {
+        return mActivityContext instanceof Launcher;
+    }
+
     public void setShouldAddArrow(boolean shouldAddArrow) {
         mShouldAddArrow = shouldAddArrow;
     }
@@ -153,6 +158,7 @@ public class OptionsPopupView<T extends Context & ActivityContext> extends Arrow
     @Override
     public void assignMarginsAndBackgrounds(ViewGroup viewGroup) {
         assignMarginsAndBackgrounds(viewGroup, mColors[0]);
+        if (isGlassStyle()) return;
         // last shortcut doesn't need bottom margin
         final int count = viewGroup.getChildCount() - 1;
         for (int i = 0; i < count; i++) {

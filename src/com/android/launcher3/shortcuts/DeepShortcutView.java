@@ -33,7 +33,6 @@ import android.widget.FrameLayout;
 import com.android.launcher3.BubbleTextView;
 import com.android.launcher3.Launcher;
 import com.android.launcher3.R;
-import com.android.launcher3.Utilities;
 import com.android.launcher3.model.data.WorkspaceItemInfo;
 import com.android.launcher3.popup.PopupContainerWithArrow;
 import com.android.launcher3.views.BubbleTextHolder;
@@ -132,10 +131,9 @@ public class DeepShortcutView extends FrameLayout implements BubbleTextHolder {
      * Returns the position of the center of the icon relative to the container.
      */
     public Point getIconCenter() {
-        sTempPoint.y = sTempPoint.x = getMeasuredHeight() / 2;
-        if (Utilities.isRtl(getResources())) {
-            sTempPoint.x = getMeasuredWidth() - sTempPoint.x;
-        }
+        sTempPoint.y = getMeasuredHeight() / 2;
+        // Lawnchair: from where the icon is actually laid out, which may be at the end of the row.
+        sTempPoint.x = mIconView.getLeft() + mIconView.getWidth() / 2;
         return sTempPoint;
     }
 

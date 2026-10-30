@@ -128,6 +128,11 @@ public abstract class SystemShortcut<T extends ActivityContext> extends ItemInfo
         return mAccessibilityActionId == action;
     }
 
+    /** Lawnchair: whether this removes or deletes something, which the menu shows in red. */
+    public boolean isDestructive() {
+        return false;
+    }
+
     public interface Factory<T extends ActivityContext> {
 
         @Nullable
@@ -275,6 +280,11 @@ public abstract class SystemShortcut<T extends ActivityContext> extends ItemInfo
         public RemoveApp(T target, ItemInfo itemInfo, @NonNull View originalView) {
             super(R.drawable.ic_remove_no_shadow, R.string.remove_drop_target_label, target,
                     itemInfo, originalView, false);
+        }
+
+        @Override
+        public boolean isDestructive() {
+            return true;
         }
 
         @Override
@@ -466,6 +476,11 @@ public abstract class SystemShortcut<T extends ActivityContext> extends ItemInfo
                     itemInfo, originalView);
             mComponentName = cn;
 
+        }
+
+        @Override
+        public boolean isDestructive() {
+            return true;
         }
 
         @Override

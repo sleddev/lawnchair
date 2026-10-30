@@ -27,8 +27,11 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.Resources;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -46,11 +49,13 @@ import android.widget.FrameLayout;
 import androidx.annotation.VisibleForTesting;
 
 import com.android.launcher3.AbstractFloatingView;
+import com.android.launcher3.BubbleTextView;
 import com.android.launcher3.InsettableFrameLayout;
 import com.android.launcher3.R;
 import com.android.launcher3.Utilities;
 import com.android.launcher3.dragndrop.DragLayer;
 import com.android.launcher3.shortcuts.DeepShortcutView;
+import com.android.launcher3.util.MultiPropertyFactory;
 import com.android.launcher3.util.RunnableList;
 import com.android.launcher3.util.Themes;
 import com.android.launcher3.views.ActivityContext;
@@ -58,6 +63,9 @@ import com.android.launcher3.views.BaseDragLayer;
 
 import app.lawnchair.theme.color.tokens.ColorTokens;
 import app.lawnchair.theme.drawable.DrawableTokens;
+import app.lawnchair.ui.popup.GlassCardDrawable;
+import app.lawnchair.ui.popup.GlassPopup;
+import app.lawnchair.ui.popup.GlassPopupBackdrop;
 
 /**
  * A container for shortcuts to deep links and notifications associated with an app.
@@ -132,6 +140,17 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
     private final String mIterateChildrenTag;
 
     public final int[] mColors;
+
+    // Lawnchair: the glass look, see GlassPopup.
+    private boolean mGlassStyled;
+    private final RectF mGlassTarget = new RectF();
+    // The bottom of the target including its label, which the popup shouldn't cover.
+    private float mGlassTargetBottom;
+    private final Paint mGlassPaint = new Paint();
+    private GlassPopupBackdrop mGlassBackdrop;
+    // The blur behind the popup, if it's ours to set: something else, like an open folder or the
+    // finder, may already be blurring the home screen.
+    private MultiPropertyFactory<?>.MultiProperty mGlassBlur;
 
     public ArrowPopup(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
@@ -228,6 +247,10 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
      *                        Otherwise, we will use this color for all child views.
      */
     protected void assignMarginsAndBackgrounds(ViewGroup viewGroup, int backgroundColor) {
+        if (isGlassStyle()) {
+            if (viewGroup == this) applyGlassStyle();
+            return;
+        }
         int[] colors = null;
         if (backgroundColor == Color.TRANSPARENT) {
             // Lazily get the colors so they match the current wallpaper colors.
@@ -327,7 +350,7 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
     public void show() {
         setupForDisplay();
         assignMarginsAndBackgrounds(this);
-        if (shouldAddArrow()) {
+        if (shouldAddArrow() && !isGlassStyle()) {
             addArrow();
         }
         animateOpen();
@@ -337,7 +360,239 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
         setVisibility(View.INVISIBLE);
         mIsOpen = true;
         getPopupContainer().addView(this);
-        orientAboutObject();
+        if (isGlassStyle()) {
+            // Styled first, so it's measured at the size it'll show at.
+            applyGlassStyle();
+            setupGlassTarget();
+            addGlassBackdrop();
+            orientGlass();
+        } else {
+            orientAboutObject();
+        }
+    }
+
+    // ---- Lawnchair: glass style ----
+
+    /**
+     * Whether this popup takes the launcher's glass look (see {@link GlassPopup}) instead of the
+     * Material one: a single frosted card without an arrow, over a dimmed and blurred home screen.
+     */
+    protected boolean isGlassStyle() {
+        return false;
+    }
+
+    /** The icon the popup is for, lifted above the dimmed home screen while it's open. */
+    protected BubbleTextView getLiftedIcon() {
+        return null;
+    }
+
+    /** Whether a row is for an action that destroys something, which is shown in red. */
+    protected boolean isDestructiveRow(DeepShortcutView row) {
+        return row.getTag() instanceof SystemShortcut<?> shortcut && shortcut.isDestructive();
+    }
+
+    /**
+     * Puts all the rows on one card. Rows that follow each other are split by a hairline, and
+     * groups of rows (and anything else, like the wallpaper carousel) by a thicker band.
+     */
+    private void applyGlassStyle() {
+        int gap = GlassPopup.dp(getContext(), GlassPopup.SECTION_GAP_DP);
+        if (!mGlassStyled) {
+            mGlassStyled = true;
+            setBackground(new GlassCardDrawable(getContext()));
+            setClipToOutline(true);
+            // No shadow: it shows through the translucent card as an inner outline.
+            setElevation(0);
+            setWillNotDraw(false);
+        }
+        View last = null;
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            styleGlassChild(child);
+            if (child.getVisibility() != VISIBLE) continue;
+            if (last != null) {
+                ((MarginLayoutParams) last.getLayoutParams()).bottomMargin =
+                        last instanceof DeepShortcutView && child instanceof DeepShortcutView
+                                ? 0 : gap;
+            }
+            ((MarginLayoutParams) child.getLayoutParams()).bottomMargin = 0;
+            last = child;
+        }
+        measure(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED);
+    }
+
+    private void styleGlassChild(View view) {
+        if (view instanceof DeepShortcutView row) {
+            GlassPopup.styleRow(row, isDestructiveRow(row));
+            return;
+        }
+        if (view == mArrow) return;
+        view.setElevation(0);
+        if (view instanceof ViewGroup group && isShortcutContainer(view)) {
+            view.setBackground(null);
+            for (int i = 0; i < group.getChildCount(); i++) {
+                styleGlassChild(group.getChildAt(i));
+            }
+        } else if (view instanceof android.widget.ImageView icon) {
+            // A system action shown as just an icon, when there are too many to list.
+            icon.setImageTintList(android.content.res.ColorStateList.valueOf(
+                    GlassPopup.textColor(GlassPopup.isDark(getContext()))));
+        } else if (view instanceof ViewGroup) {
+            view.setBackground(null);
+        }
+    }
+
+    /** Where the popup's target is, preferring the bounds of the lifted icon itself. */
+    private void setupGlassTarget() {
+        BaseDragLayer dragLayer = getPopupContainer();
+        BubbleTextView icon = getLiftedIcon();
+        if (icon != null && icon.getIcon() != null) {
+            icon.getIconBounds(mTempRect);
+            float[] topLeft = {mTempRect.left, mTempRect.top};
+            float scale = dragLayer.getDescendantCoordRelativeToSelf(icon, topLeft);
+            mGlassTarget.set(topLeft[0], topLeft[1],
+                    topLeft[0] + mTempRect.width() * scale,
+                    topLeft[1] + mTempRect.height() * scale);
+            mGlassTargetBottom = topLeft[1]
+                    + (icon.getHeight() - icon.getPaddingBottom() - mTempRect.top) * scale;
+        } else {
+            getTargetObjectLocation(mTempRect);
+            mGlassTarget.set(mTempRect);
+            mGlassTargetBottom = mGlassTarget.bottom;
+        }
+    }
+
+    private void addGlassBackdrop() {
+        BaseDragLayer dragLayer = getPopupContainer();
+        BubbleTextView icon = getLiftedIcon();
+        mGlassBackdrop = new GlassPopupBackdrop(getContext(), icon,
+                icon != null && icon.getIcon() != null ? new RectF(mGlassTarget) : null);
+        mGlassBackdrop.setAlpha(0f);
+        BaseDragLayer.LayoutParams lp = new BaseDragLayer.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        lp.ignoreInsets = true;
+        dragLayer.addView(mGlassBackdrop, dragLayer.indexOfChild(this), lp);
+
+        MultiPropertyFactory<?>.MultiProperty blur = mActivityContext.getDepthController() != null
+                ? mActivityContext.getDepthController().getFolderDepth() : null;
+        mGlassBlur = blur != null && blur.getValue() == 0f ? blur : null;
+    }
+
+    /**
+     * Places the popup below its target if it fits, else above it, lined up with whichever side
+     * of the screen the target is on.
+     */
+    private void orientGlass() {
+        measure(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED);
+        int width = getMeasuredWidth();
+        int height = getMeasuredHeight();
+        BaseDragLayer dragLayer = getPopupContainer();
+        Rect insets = dragLayer.getInsets();
+        int gap = GlassPopup.dp(getContext(), GlassPopup.TARGET_GAP_DP);
+        int margin = GlassPopup.dp(getContext(), GlassPopup.SCREEN_MARGIN_DP);
+        int top = insets.top + margin;
+        int bottom = dragLayer.getHeight() - insets.bottom - margin;
+
+        int below = Math.round(Math.max(mGlassTarget.bottom, mGlassTargetBottom)) + gap;
+        int above = Math.round(mGlassTarget.top) - gap - height;
+        int y;
+        if (below + height <= bottom) {
+            y = below;
+            mIsAboveIcon = false;
+        } else if (above >= top) {
+            y = above;
+            mIsAboveIcon = true;
+        } else {
+            y = Math.max(top, (dragLayer.getHeight() - height) / 2);
+            mIsAboveIcon = false;
+        }
+
+        mIsLeftAligned = mGlassTarget.centerX() < dragLayer.getWidth() / 2f;
+        int x = Math.round(mIsLeftAligned ? mGlassTarget.left : mGlassTarget.right - width);
+        x = Math.max(insets.left + margin,
+                Math.min(x, dragLayer.getWidth() - insets.right - margin - width));
+        setX(x);
+
+        mGravity = 0;
+        // Anchored on the side facing the target, so it grows away from it as shortcuts load.
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) getLayoutParams();
+        if (mIsAboveIcon) {
+            lp.gravity = Gravity.BOTTOM;
+            lp.topMargin = 0;
+            lp.bottomMargin = dragLayer.getHeight() - y - height;
+        } else {
+            lp.gravity = Gravity.TOP;
+            lp.topMargin = y;
+            lp.bottomMargin = 0;
+        }
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        super.dispatchDraw(canvas);
+        if (!mGlassStyled) return;
+        boolean dark = GlassPopup.isDark(getContext());
+        float hairline = Math.max(1f, getResources().getDisplayMetrics().density * 0.5f);
+        View last = null;
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            if (child.getVisibility() != VISIBLE) continue;
+            if (last != null) {
+                if (last.getBottom() < child.getTop()) {
+                    mGlassPaint.setColor(GlassPopup.bandColor(dark));
+                    canvas.drawRect(0, last.getBottom(), getWidth(), child.getTop(), mGlassPaint);
+                } else if (last instanceof DeepShortcutView && child instanceof DeepShortcutView) {
+                    drawHairline(canvas, child.getTop(), hairline, dark);
+                }
+            }
+            if (child instanceof ViewGroup group && isShortcutContainer(child)) {
+                View lastRow = null;
+                for (int j = 0; j < group.getChildCount(); j++) {
+                    View row = group.getChildAt(j);
+                    if (row.getVisibility() != VISIBLE || !(row instanceof DeepShortcutView)) {
+                        continue;
+                    }
+                    if (lastRow != null) {
+                        drawHairline(canvas, child.getTop() + row.getTop(), hairline, dark);
+                    }
+                    lastRow = row;
+                }
+            }
+            last = child;
+        }
+    }
+
+    private void drawHairline(Canvas canvas, float y, float thickness, boolean dark) {
+        mGlassPaint.setColor(GlassPopup.separatorColor(dark));
+        canvas.drawRect(0, y - thickness / 2, getWidth(), y + thickness / 2, mGlassPaint);
+    }
+
+    private void addGlassAnimators(boolean isOpening, AnimatorSet out) {
+        long duration = isOpening ? OPEN_DURATION_U : CLOSE_DURATION_U;
+        if (mGlassBackdrop != null) {
+            out.play(getAnimatorOfFloat(mGlassBackdrop, View.ALPHA, (int) duration, 0, LINEAR,
+                    isOpening ? 1f : 0f));
+        }
+        if (mGlassBlur != null) {
+            MultiPropertyFactory<?>.MultiProperty blur = mGlassBlur;
+            ValueAnimator anim = ValueAnimator.ofFloat(blur.getValue(),
+                    isOpening ? GlassPopup.BLUR_DEPTH : 0f);
+            anim.addUpdateListener(a -> blur.setValue((float) a.getAnimatedValue()));
+            anim.setDuration(duration);
+            anim.setInterpolator(isOpening ? EMPHASIZED_DECELERATE : EMPHASIZED_ACCELERATE);
+            out.play(anim);
+        }
+    }
+
+    private void removeGlassBackdrop() {
+        if (mGlassBackdrop != null) {
+            getPopupContainer().removeView(mGlassBackdrop);
+            mGlassBackdrop = null;
+        }
+        if (mGlassBlur != null) {
+            mGlassBlur.setValue(0f);
+            mGlassBlur = null;
+        }
     }
 
     private int getArrowLeft() {
@@ -645,6 +900,12 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
      * Sets X and Y pivots for the view animation considering arrow position.
      */
     protected void setPivotForOpenCloseAnimation() {
+        if (mGlassStyled) {
+            // Grows out of the target.
+            setPivotX(Math.max(0, Math.min(mGlassTarget.centerX() - getX(), getMeasuredWidth())));
+            setPivotY(mIsAboveIcon ? getMeasuredHeight() : 0f);
+            return;
+        }
         int arrowCenter = mArrowOffsetHorizontal + mArrowWidth / 2;
         if (mIsArrowRotated) {
             setPivotX(mIsLeftAligned ? 0f : getMeasuredWidth());
@@ -690,6 +951,9 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
         }
 
         fadeInChildViews(this, alphaValues, childFadeStartDelay, childFadeDuration, animatorSet);
+        if (mGlassStyled) {
+            addGlassAnimators(isOpening, animatorSet);
+        }
         return animatorSet;
     }
 
@@ -724,6 +988,7 @@ public abstract class ArrowPopup<T extends Context & ActivityContext>
         mDeferContainerRemoval = false;
         getPopupContainer().removeView(this);
         getPopupContainer().removeView(mArrow);
+        removeGlassBackdrop();
         mOnCloseCallbacks.executeAllAndClear();
     }
 

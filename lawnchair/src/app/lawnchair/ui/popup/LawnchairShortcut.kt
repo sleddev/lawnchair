@@ -265,6 +265,8 @@ class LawnchairShortcut {
             originalView,
         ) {
 
+        override fun isDestructive() = true
+
         /**
          * @return the component name that should be uninstalled or null.
          */

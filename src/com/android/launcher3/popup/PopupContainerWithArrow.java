@@ -150,6 +150,16 @@ public class PopupContainerWithArrow<T extends Context & ActivityContext>
         return (type & TYPE_ACTION_POPUP) != 0;
     }
 
+    @Override
+    protected boolean isGlassStyle() {
+        return mActivityContext instanceof Launcher;
+    }
+
+    @Override
+    protected BubbleTextView getLiftedIcon() {
+        return mOriginalIcon;
+    }
+
     public OnClickListener getItemClickListener() {
         return (view) -> {
             mActivityContext.getItemOnClickListener().onClick(view);
@@ -490,7 +500,10 @@ public class PopupContainerWithArrow<T extends Context & ActivityContext>
      * @param currentHeight height of popup before adding deep shortcuts
      */
     private void addDeepShortcuts(int deepShortcutCount, float currentHeight) {
-        mDeepShortcutContainer = inflateAndAdd(R.layout.deep_shortcut_container, this);
+        // Lawnchair: the glass menu lists the app's own shortcuts first, then the system's.
+        mDeepShortcutContainer = isGlassStyle()
+                ? inflateAndAdd(R.layout.deep_shortcut_container, this, 0)
+                : inflateAndAdd(R.layout.deep_shortcut_container, this);
         for (int i = deepShortcutCount; i > 0; i--) {
             currentHeight += mShortcutHeight;
             // when there is limited vertical screen space, limit total popup rows to fit
