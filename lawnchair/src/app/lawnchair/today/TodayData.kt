@@ -37,6 +37,8 @@ import kotlinx.coroutines.withContext
 
 private const val TAG = "TodayData"
 
+const val PIXEL_WEATHER = "com.google.android.apps.weather"
+
 internal fun Context.hasPermission(permission: String) =
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
@@ -250,6 +252,25 @@ suspend fun loadPhoto(context: Context, seed: Long, sizePx: Int): TodayPhoto? = 
     }
 }
 
+private const val GOOGLE_PHOTOS = "com.google.android.apps.photos"
+
+/**
+ * Opens [uri] in the user's default viewer. The exact MIME type is used rather than a wildcard,
+ * since "Always" in the chooser is saved against the type and a wildcard never matches it again.
+ * With no default set, Google Photos is preferred over showing the chooser at all.
+ */
+fun photoIntent(context: Context, uri: Uri): Intent {
+    val pm = context.packageManager
+    val intent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, context.contentResolver.getType(uri) ?: "image/*")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val handlers = pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY).map { it.activityInfo.packageName }
+    // When there's no default, this resolves to the system chooser, which isn't one of the handlers.
+    val default = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+    if (default !in handlers && GOOGLE_PHOTOS in handlers) intent.setPackage(GOOGLE_PHOTOS)
+    return intent
+}
+
 private fun queryPhotos(context: Context, sinceSeconds: Long): List<Pair<Long, Long>> =
     context.contentResolver.query(
         MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -268,6 +289,16 @@ private fun queryPhotos(context: Context, sinceSeconds: Long): List<Pair<Long, L
 data class AppUsage(val packageName: String, val label: String, val icon: Drawable?, val millis: Long)
 
 data class ScreenTime(val total: Long, val apps: List<AppUsage>)
+
+/** Digital Wellbeing's screen time dashboard, or the usage access settings without it. */
+fun screenTimeIntent(context: Context): Intent {
+    val dashboard = Intent("com.google.android.apps.wellbeing.action.APP_USAGE_DASHBOARD")
+    return if (dashboard.resolveActivity(context.packageManager) != null) {
+        dashboard
+    } else {
+        Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+    }
+}
 
 fun Context.hasUsageAccess(): Boolean {
     val appOps = getSystemService(AppOpsManager::class.java) ?: return false

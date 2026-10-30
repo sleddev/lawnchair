@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -172,7 +173,10 @@ private fun WeatherCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
             .fillMaxSize()
             .background(gradient)
             .clickableNoRipple {
-                if (action != null && temperature != null) {
+                val weatherApp = context.packageManager.getLaunchIntentForPackage(PIXEL_WEATHER)
+                if (weatherApp != null) {
+                    host.startIntent(weatherApp)
+                } else if (action != null && temperature != null) {
                     host.sendAction(action)
                 } else {
                     host.startIntent(PreferenceActivity.createIntent(context, Smartspace))
@@ -246,7 +250,12 @@ private fun BatteryCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
     val needsBluetooth = remember(host.refreshKey) { Utilities.ATLEAST_S && !context.hasPermission(BLUETOOTH_PERMISSION) }
     val shown = entries.take(if (size == TodaySize.Small) 2 else 4)
 
-    Column(Modifier.fillMaxSize().padding(14.dp)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .clickableNoRipple { host.startIntent(Intent(Intent.ACTION_POWER_USAGE_SUMMARY)) }
+            .padding(14.dp),
+    ) {
         CardTitle(Icons.Rounded.BatteryFull, "Batteries", BatteryGreen, colors)
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             when {
@@ -449,12 +458,13 @@ private fun EventRow(event: TodayEvent, host: TodayHost, colors: TodayColors, hi
                     Modifier
                 },
             )
-            .clickableNoRipple { host.startIntent(eventIntent(event)) },
+            .clickableNoRipple { host.startIntent(eventIntent(event)) }
+            .height(IntrinsicSize.Min),
     ) {
         Box(
             Modifier
                 .width(4.dp)
-                .height(36.dp)
+                .fillMaxHeight()
                 .clip(RoundedCornerShape(2.dp))
                 .background(Color(event.color or 0xFF000000.toInt())),
         )
@@ -505,13 +515,7 @@ private fun PhotoCard(size: TodaySize, host: TodayHost, colors: TodayColors) {
     Box(
         Modifier
             .fillMaxSize()
-            .clickableNoRipple {
-                host.startIntent(
-                    Intent(Intent.ACTION_VIEW)
-                        .setDataAndType(current.uri, "image/*")
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
-                )
-            },
+            .clickableNoRipple { host.startIntent(photoIntent(context, current.uri)) },
     ) {
         Image(
             bitmap = remember(current) { current.bitmap.asImageBitmap() },
@@ -562,10 +566,7 @@ private fun ScreenTimeCard(size: TodaySize, host: TodayHost, colors: TodayColors
     }
     val usage by produceState<ScreenTime?>(null, host.refreshKey) { value = loadScreenTime(context) }
     val current = usage
-    val wellbeing = remember {
-        context.packageManager.getLaunchIntentForPackage("com.google.android.apps.wellbeing")
-            ?: Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-    }
+    val wellbeing = remember { screenTimeIntent(context) }
     Column(
         Modifier
             .fillMaxSize()
